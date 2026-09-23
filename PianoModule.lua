@@ -3,7 +3,7 @@ local pianoplayermodule = {}
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local keys = {
-    -- Letters
+    -- Letters / white keys
     ["a"] = Enum.KeyCode.A,
     ["b"] = Enum.KeyCode.B,
     ["c"] = Enum.KeyCode.C,
@@ -15,6 +15,7 @@ local keys = {
     ["i"] = Enum.KeyCode.I,
     ["j"] = Enum.KeyCode.J,
     ["k"] = Enum.KeyCode.K,
+    ["l"] = Enum.KeyCode.L,
     ["m"] = Enum.KeyCode.M,
     ["n"] = Enum.KeyCode.N,
     ["o"] = Enum.KeyCode.O,
@@ -30,6 +31,7 @@ local keys = {
     ["y"] = Enum.KeyCode.Y,
     ["z"] = Enum.KeyCode.Z,
 
+    -- Letters / black keys
     ["A"] = Enum.KeyCode.A,
     ["B"] = Enum.KeyCode.B,
     ["C"] = Enum.KeyCode.C,
@@ -41,6 +43,7 @@ local keys = {
     ["I"] = Enum.KeyCode.I,
     ["J"] = Enum.KeyCode.J,
     ["K"] = Enum.KeyCode.K,
+    ["L"] = Enum.KeyCode.L,
     ["M"] = Enum.KeyCode.M,
     ["N"] = Enum.KeyCode.N,
     ["O"] = Enum.KeyCode.O,
@@ -82,17 +85,43 @@ local keys = {
 }
 
 local shiftCharacters = {
-    ["A"] = true, ["B"] = true, ["C"] = true, ["D"] = true,
-    ["E"] = true, ["F"] = true, ["G"] = true, ["H"] = true,
-    ["I"] = true, ["J"] = true, ["K"] = true, ["M"] = true,
-    ["N"] = true, ["O"] = true, ["P"] = true, ["Q"] = true,
-    ["R"] = true, ["S"] = true, ["T"] = true, ["U"] = true,
-    ["V"] = true, ["W"] = true, ["X"] = true, ["Y"] = true,
+    ["A"] = true,
+    ["B"] = true,
+    ["C"] = true,
+    ["D"] = true,
+    ["E"] = true,
+    ["F"] = true,
+    ["G"] = true,
+    ["H"] = true,
+    ["I"] = true,
+    ["J"] = true,
+    ["K"] = true,
+    ["L"] = true,
+    ["M"] = true,
+    ["N"] = true,
+    ["O"] = true,
+    ["P"] = true,
+    ["Q"] = true,
+    ["R"] = true,
+    ["S"] = true,
+    ["T"] = true,
+    ["U"] = true,
+    ["V"] = true,
+    ["W"] = true,
+    ["X"] = true,
+    ["Y"] = true,
     ["Z"] = true,
 
-    ["!"] = true, ['"'] = true, ["§"] = true, ["$"] = true,
-    ["%"] = true, ["&"] = true, ["/"] = true, ["("] = true,
-    [")"] = true, ["="] = true,
+    ["!"] = true,
+    ['"'] = true,
+    ["§"] = true,
+    ["$"] = true,
+    ["%"] = true,
+    ["&"] = true,
+    ["/"] = true,
+    ["("] = true,
+    [")"] = true,
+    ["="] = true,
 }
 
 function pianoplayermodule:playKey(key, keyDelay)
@@ -139,7 +168,10 @@ function pianoplayermodule:playKey(key, keyDelay)
         )
     end
 end
+
 function pianoplayermodule:sleep(sleeptime)
     task.wait(sleeptime)
 end
+
 return pianoplayermodule
+
