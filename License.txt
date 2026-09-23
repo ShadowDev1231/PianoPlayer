@@ -1,0 +1,40 @@
+# PROPRIETARY SOFTWARE LICENSE
+
+Copyright © 2026 ShadowDev. All rights reserved.
+
+## 1. Permission to Use
+
+Subject to the terms of this license, the copyright holder grants you a limited, non-exclusive, non-transferable, revocable license to use and execute the original, unmodified version of this software for personal use.
+
+## 2. Restrictions
+
+You may NOT, without prior written permission from the copyright holder:
+
+* Modify, alter, or create derivative versions of the software.
+* Copy, reproduce, or redistribute the software.
+* Re-upload, publish, or share the source code.
+* Sell, rent, lease, sublicense, or otherwise commercially distribute the software.
+* Incorporate the software or any portion of its source code into another project or product.
+* Remove, alter, or obscure copyright, attribution, or license notices.
+
+## 3. Ownership
+
+The software and all associated source code remain the exclusive property of ShadowDev. This license does not transfer ownership or copyright to you.
+
+## 4. No Warranty
+
+The software is provided "AS IS", without warranties of any kind, express or implied. The copyright holder is not responsible for any damage, loss, or other consequences resulting from the use of the software.
+
+## 5. Termination
+
+This license automatically terminates if you violate any of its terms. Upon termination, you must stop using the software and delete all copies in your possession.
+
+## 6. Permission Requests
+
+Requests for permission to modify, redistribute, commercially use, or otherwise use the software outside the terms of this license must be made directly to the copyright holder.
+
+Contact: @shadowdev0051 in discord
+
+---
+
+Unauthorized modification, redistribution, or commercial use is prohibited.
