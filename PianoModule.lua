@@ -1,5 +1,5 @@
 local pianoplayermodule = {}
-pianoplayermodule.__index = pianoplayermodule
+
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local keys = {
