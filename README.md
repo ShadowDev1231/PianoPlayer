@@ -1,40 +1,42 @@
 # 🎹 PianoPlayer
 
-A Lua/Luau MIDI piano player that lets you convert MIDI files into Lua and play them through the PianoPlayer script.
+A Lua/Luau MIDI piano player designed to play songs generated specifically for PianoPlayer.
 
-> **Note:** Currently, PianoPlayer is designed specifically for scripts generated for this project. Support for custom Lua/Luau piano scripts from other players is planned for a future update.
-
----
-
-## ✨ Features
-
-* 🎵 Convert MIDI files into Lua/Luau piano scripts
-* 🎹 Play converted MIDI songs using PianoPlayer
-* ⚡ Simple `loadstring` setup
-* 🌐 Web-based MIDI → Lua converter
-* 🔧 Custom Lua/Luau player support planned
+> ⚠️ **Important:** PianoPlayer currently **does not support custom Luau scripts**. The player uses only the Lua/Luau script that is hosted in this GitHub repository. Support for custom Luau scripts may be added in a future update.
 
 ---
 
-## 🎼 MIDI → Lua
+## 🎼 How to Make a MIDI2Lua Song
 
-To convert a MIDI file into a PianoPlayer-compatible Lua script, use the **Midi2Lua** converter:
+Use the **Midi2Lua** website to convert your MIDI files into songs compatible with PianoPlayer.
 
 **[🎵 Open Midi2Lua](https://shadowdev1231.github.io/midi2piano)**
 
-### How to use it
+### Steps
 
-1. Open **Midi2Lua**.
-2. Upload your `.mid` / `.midi` file.
-3. Configure the available options.
-4. Generate the Lua script.
-5. Use the generated script with PianoPlayer.
+1. Get a `.mid` / `.midi` file.
+2. Open **Midi2Lua**.
+3. Upload your MIDI file.
+4. Generate the song.
+5. Use the generated file with PianoPlayer.
+
+---
+
+## 🚫 Custom Luau Scripts
+
+PianoPlayer currently **does not have support for custom Luau scripts**.
+
+The player only uses the official Lua/Luau player script hosted in this GitHub repository.
+
+You **cannot replace it with your own custom Luau player script** at the moment.
+
+Support for custom scripts may be added in a future update.
 
 ---
 
 ## 🎹 How to Load PianoPlayer
 
-Run the following Lua/Luau code in your environment:
+Use the following Lua/Luau loadstring:
 
 ```lua
 loadstring(game:HttpGet(
@@ -42,27 +44,15 @@ loadstring(game:HttpGet(
 ))()
 ```
 
-This loads the latest version of `main.lua` directly from the repository.
-
----
-
-## 🛠️ Custom Lua Script Support
-
-At the moment, PianoPlayer does **not** provide a general-purpose API for other players to use their own custom Lua/Luau piano scripts.
-
-This functionality is planned for a future version.
-
-The goal is to make it possible for users to provide their own compatible piano/player scripts instead of being limited to MIDI files generated specifically for PianoPlayer.
+The script is hosted directly in this GitHub repository and loads the current `main.lua`.
 
 ---
 
 ## 💬 Community
 
-Have questions, suggestions, or want to share your songs?
+Have questions, suggestions, or want to discuss PianoPlayer?
 
-Join the community on Discord:
-
-**[💬 Join the PianoPlayer Discord](https://discord.gg/e5awQvd9wt)**
+**[💬 Join our Discord](https://discord.gg/e5awQvd9wt)**
 
 ---
 
@@ -74,17 +64,7 @@ Created and maintained by **ShadowDev1231**.
 
 * 🎹 PianoPlayer
 * 🎵 Midi2Lua
-* 🔧 Project development and maintenance
-
----
-
-## 📌 Links
-
-| Resource       | Link                                                              |
-| -------------- | ----------------------------------------------------------------- |
-| 🎹 PianoPlayer | [GitHub Repository](https://github.com/ShadowDev1231/PianoPlayer) |
-| 🎵 Midi2Lua    | [Open Converter](https://shadowdev1231.github.io/midi2piano)      |
-| 💬 Discord     | [Join Community](https://discord.gg/e5awQvd9wt)                   |
+* 🔧 Development & maintenance
 
 ---
 
@@ -92,4 +72,4 @@ Created and maintained by **ShadowDev1231**.
 
 If you find PianoPlayer useful, consider giving the repository a ⭐ on GitHub!
 
-More features and improvements are planned for future releases.
+More features and improvements are planned for future updates, including possible support for custom Luau scripts.
