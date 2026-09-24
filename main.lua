@@ -9,11 +9,15 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 local DEFAULT_KEY_DELAY = 0.05
 
-local GITHUB_SONGS_URL =
-	"https://api.github.com/repos/ShadowDev1231/PianoPlayer/contents/songs?ref=main"
+--==================================================
+-- CONSTANTS
+--==================================================
 
-local PIANO_MODULE_URL =
-	"https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/refs/heads/main/PianoModule.lua"
+local VERSION_URL =
+	"https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/main/version.lua"
+
+local GITHUB_API_BASE =
+	"https://api.github.com/repos/ShadowDev1231/PianoPlayer"
 
 --==================================================
 -- HTTP
@@ -59,6 +63,83 @@ local function httpGet(url: string): string
 
 	return body
 end
+
+--==================================================
+-- VERSION
+--==================================================
+
+local function loadVersion(): string
+	local source = httpGet(VERSION_URL)
+
+	local compiled, compileError = loadstring(source)
+
+	if not compiled then
+		error(
+			"Failed to compile version.lua: "
+				.. tostring(compileError)
+		)
+	end
+
+	local success, runtimeError = pcall(compiled)
+
+	if not success then
+		error(
+			"Failed to execute version.lua: "
+				.. tostring(runtimeError)
+		)
+	end
+
+	if type(_G.PianoShadowDevV) ~= "string" then
+		error(
+			"version.lua must define "
+				.. "_G.PianoShadowDevV as a string."
+		)
+	end
+
+	if not _G.PianoShadowDevV:match("^%d+%.%d+%.%d+$") then
+		error(
+			"Invalid version format: "
+				.. tostring(_G.PianoShadowDevV)
+				.. ". Expected X.Y.Z"
+		)
+	end
+
+	return _G.PianoShadowDevV
+end
+
+local VERSION: string
+
+do
+	local success, result = pcall(loadVersion)
+
+	if not success then
+		warn("PianoPlayer:", result)
+
+		-- Fallback so the UI can still start.
+		VERSION = "unknown"
+	else
+		VERSION = result
+	end
+end
+
+local RELEASE_TAG = "v" .. VERSION
+
+--==================================================
+-- RELEASE URLS
+--==================================================
+
+local GITHUB_RELEASE_BASE =
+	"https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/"
+	.. RELEASE_TAG
+
+local GITHUB_SONGS_URL =
+	GITHUB_API_BASE
+		.. "/contents/songs?ref="
+		.. RELEASE_TAG
+
+local PIANO_MODULE_URL =
+	GITHUB_RELEASE_BASE
+		.. "/PianoModule.lua"
 
 --==================================================
 -- Piano Module
@@ -116,6 +197,9 @@ local isPlaying = false
 local stopRequested = false
 local playbackThread: thread? = nil
 local playbackId = 0
+
+local isLoading = false
+local loadGeneration = 0
 
 local songs: {Song} = {}
 local selectedCategory = "All"
@@ -231,7 +315,10 @@ PlayerStroke.Color = Color3.fromRGB(255, 255, 255)
 PlayerStroke.Transparency = 0.88
 PlayerStroke.Parent = PlayerBar
 
+--==================================================
 -- Piano icon
+--==================================================
+
 local PianoIcon = Instance.new("TextLabel")
 PianoIcon.Name = "PianoIcon"
 PianoIcon.Size = UDim2.fromOffset(42, 42)
@@ -249,12 +336,16 @@ local PianoIconCorner = Instance.new("UICorner")
 PianoIconCorner.CornerRadius = UDim.new(0, 11)
 PianoIconCorner.Parent = PianoIcon
 
+--==================================================
+-- Title
+--==================================================
+
 local PlayerTitle = Instance.new("TextLabel")
 PlayerTitle.Name = "PlayerTitle"
 PlayerTitle.Size = UDim2.new(0.45, 0, 0, 25)
 PlayerTitle.Position = UDim2.new(0, 66, 0, 14)
 PlayerTitle.BackgroundTransparency = 1
-PlayerTitle.Text = "PIANO PLAYER"
+PlayerTitle.Text = "PIANO PLAYER v" .. VERSION
 PlayerTitle.TextColor3 = Color3.fromRGB(240, 244, 255)
 PlayerTitle.TextSize = 14
 PlayerTitle.Font = Enum.Font.GothamBold
@@ -483,13 +574,8 @@ end
 --==================================================
 
 local function stopSong()
-	if not isPlaying and not playbackThread then
-		setStatus("Ready")
-		return
-	end
-
-	stopRequested = true
 	playbackId += 1
+	stopRequested = true
 
 	local currentThread = playbackThread
 
@@ -501,7 +587,6 @@ local function stopSong()
 
 	playbackThread = nil
 	isPlaying = false
-	stopRequested = false
 
 	setStatus("Stopped")
 end
@@ -524,6 +609,7 @@ local function playSong(song: Song, fallbackName: string)
 	local songName = song.Name or fallbackName
 
 	playbackId += 1
+
 	local currentPlaybackId = playbackId
 
 	isPlaying = true
@@ -545,9 +631,14 @@ local function playSong(song: Song, fallbackName: string)
 				local keyDelay = song.KeyDelay or DEFAULT_KEY_DELAY
 				local keys = song.Keys:gsub("%s+", "")
 
+				if #keys == 0 then
+					error("Song contains no keys.")
+				end
+
 				for index = 1, #keys do
 					if stopRequested
 						or currentPlaybackId ~= playbackId then
+
 						return
 					end
 
@@ -571,7 +662,11 @@ local function playSong(song: Song, fallbackName: string)
 		end
 
 		if not success then
-			warn("PianoPlayer song error:", errorMessage)
+			warn(
+				"PianoPlayer song error:",
+				errorMessage
+			)
+
 			setStatus("Error: " .. songName)
 		elseif stopRequested then
 			setStatus("Stopped: " .. songName)
@@ -594,15 +689,154 @@ end
 local function getSongCategory(song: Song): string
 	if type(song.Category) == "string"
 		and song.Category ~= "" then
+
 		return song.Category
 	end
 
 	if type(song.Type) == "string"
 		and song.Type ~= "" then
+
 		return song.Type
 	end
 
 	return "Other"
+end
+
+--==================================================
+-- CREATE SONG BUTTON
+--==================================================
+
+local function createSongButton(
+	songData: Song,
+	layoutOrder: number
+)
+	local songButton = Instance.new("TextButton")
+
+	songButton.Name =
+		songData.Name or "Song"
+
+	songButton.Size =
+		UDim2.new(1, 0, 0, 46)
+
+	songButton.BackgroundColor3 =
+		Color3.fromRGB(255, 255, 255)
+
+	songButton.BackgroundTransparency = 0.91
+	songButton.BorderSizePixel = 0
+
+	songButton.Text =
+		"  "
+			.. (songData.Name or "Unnamed Song")
+
+	songButton.TextColor3 =
+		Color3.fromRGB(220, 228, 245)
+
+	songButton.TextSize = 12
+	songButton.Font = Enum.Font.GothamMedium
+	songButton.TextXAlignment =
+		Enum.TextXAlignment.Left
+
+	songButton.AutoButtonColor = false
+	songButton.LayoutOrder = layoutOrder
+	songButton.Parent = SongPanel
+
+	local songCorner = Instance.new("UICorner")
+	songCorner.CornerRadius = UDim.new(0, 10)
+	songCorner.Parent = songButton
+
+	local songStroke = Instance.new("UIStroke")
+	songStroke.Color =
+		Color3.fromRGB(255, 255, 255)
+
+	songStroke.Transparency = 0.94
+	songStroke.Parent = songButton
+
+	songButton.MouseEnter:Connect(function()
+		TweenService:Create(
+			songButton,
+			TweenInfo.new(0.15),
+			{
+				BackgroundTransparency = 0.82
+			}
+		):Play()
+
+		TweenService:Create(
+			songStroke,
+			TweenInfo.new(0.15),
+			{
+				Transparency = 0.75
+			}
+		):Play()
+	end)
+
+	songButton.MouseLeave:Connect(function()
+		TweenService:Create(
+			songButton,
+			TweenInfo.new(0.15),
+			{
+				BackgroundTransparency = 0.91
+			}
+		):Play()
+
+		TweenService:Create(
+			songStroke,
+			TweenInfo.new(0.15),
+			{
+				Transparency = 0.94
+			}
+		):Play()
+	end)
+
+	songButton.Activated:Connect(function()
+		task.spawn(function()
+			playSong(
+				songData,
+				songData.Name or "Song"
+			)
+		end)
+	end)
+end
+
+--==================================================
+-- REFRESH SONG DISPLAY
+--==================================================
+
+local function refreshSongDisplay()
+	clearContainer(SongPanel)
+
+	local visibleCount = 0
+
+	for _, songData in ipairs(songs) do
+		local songCategory =
+			getSongCategory(songData)
+
+		if selectedCategory == "All"
+			or songCategory == selectedCategory then
+
+			visibleCount += 1
+
+			createSongButton(
+				songData,
+				visibleCount
+			)
+		end
+	end
+
+	if visibleCount == 0 then
+		local empty = Instance.new("TextLabel")
+
+		empty.Size =
+			UDim2.new(1, 0, 0, 50)
+
+		empty.BackgroundTransparency = 1
+		empty.Text = "No songs in this category."
+		empty.TextColor3 =
+			Color3.fromRGB(150, 160, 180)
+
+		empty.TextSize = 12
+		empty.Font = Enum.Font.Gotham
+		empty.Parent = SongPanel
+	end
 end
 
 --==================================================
@@ -613,18 +847,27 @@ local function createCategoryButton(
 	category: string,
 	layoutOrder: number
 )
-
 	local button = Instance.new("TextButton")
+
 	button.Name = category
-	button.Size = UDim2.new(1, 0, 0, 40)
-	button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	button.Size =
+		UDim2.new(1, 0, 0, 40)
+
+	button.BackgroundColor3 =
+		Color3.fromRGB(255, 255, 255)
+
 	button.BackgroundTransparency = 0.93
 	button.BorderSizePixel = 0
 	button.Text = category
-	button.TextColor3 = Color3.fromRGB(195, 205, 225)
+
+	button.TextColor3 =
+		Color3.fromRGB(195, 205, 225)
+
 	button.TextSize = 12
 	button.Font = Enum.Font.GothamMedium
-	button.TextXAlignment = Enum.TextXAlignment.Left
+	button.TextXAlignment =
+		Enum.TextXAlignment.Left
+
 	button.AutoButtonColor = false
 	button.LayoutOrder = layoutOrder
 	button.Parent = CategoryPanel
@@ -643,127 +886,18 @@ local function createCategoryButton(
 		for _, child in ipairs(CategoryPanel:GetChildren()) do
 			if child:IsA("TextButton") then
 				child.BackgroundTransparency = 0.93
+
 				child.TextColor3 =
 					Color3.fromRGB(195, 205, 225)
 			end
 		end
 
 		button.BackgroundTransparency = 0.78
+
 		button.TextColor3 =
 			Color3.fromRGB(235, 242, 255)
 
-		-- Refresh visible songs.
-		clearContainer(SongPanel)
-
-		local visibleCount = 0
-
-		for _, songData in ipairs(songs) do
-			local songCategory =
-				getSongCategory(songData)
-
-			if category == "All"
-				or songCategory == category then
-
-				visibleCount += 1
-
-				local songButton = Instance.new("TextButton")
-				songButton.Name =
-					songData.Name or "Song"
-
-				songButton.Size =
-					UDim2.new(1, 0, 0, 46)
-
-				songButton.BackgroundColor3 =
-					Color3.fromRGB(255, 255, 255)
-
-				songButton.BackgroundTransparency = 0.91
-				songButton.BorderSizePixel = 0
-
-				songButton.Text =
-					"  "
-						.. (songData.Name or "Unnamed Song")
-
-				songButton.TextColor3 =
-					Color3.fromRGB(220, 228, 245)
-
-				songButton.TextSize = 12
-				songButton.Font = Enum.Font.GothamMedium
-				songButton.TextXAlignment =
-					Enum.TextXAlignment.Left
-
-				songButton.AutoButtonColor = false
-				songButton.LayoutOrder = visibleCount
-				songButton.Parent = SongPanel
-
-				local songCorner = Instance.new("UICorner")
-				songCorner.CornerRadius = UDim.new(0, 10)
-				songCorner.Parent = songButton
-
-				local songStroke = Instance.new("UIStroke")
-				songStroke.Color =
-					Color3.fromRGB(255, 255, 255)
-
-				songStroke.Transparency = 0.94
-				songStroke.Parent = songButton
-
-				songButton.MouseEnter:Connect(function()
-					TweenService:Create(
-						songButton,
-						TweenInfo.new(0.15),
-						{
-							BackgroundTransparency = 0.82
-						}
-					):Play()
-
-					TweenService:Create(
-						songStroke,
-						TweenInfo.new(0.15),
-						{
-							Transparency = 0.75
-						}
-					):Play()
-				end)
-
-				songButton.MouseLeave:Connect(function()
-					TweenService:Create(
-						songButton,
-						TweenInfo.new(0.15),
-						{
-							BackgroundTransparency = 0.91
-						}
-					):Play()
-
-					TweenService:Create(
-						songStroke,
-						TweenInfo.new(0.15),
-						{
-							Transparency = 0.94
-						}
-					):Play()
-				end)
-
-				songButton.Activated:Connect(function()
-					task.spawn(function()
-						playSong(
-							songData,
-							songData.Name or "Song"
-						)
-					end)
-				end)
-			end
-		end
-
-		if visibleCount == 0 then
-			local empty = Instance.new("TextLabel")
-			empty.Size = UDim2.new(1, 0, 0, 50)
-			empty.BackgroundTransparency = 1
-			empty.Text = "No songs in this category."
-			empty.TextColor3 =
-				Color3.fromRGB(150, 160, 180)
-			empty.TextSize = 12
-			empty.Font = Enum.Font.Gotham
-			empty.Parent = SongPanel
-		end
+		refreshSongDisplay()
 	end)
 
 	return button
@@ -781,7 +915,9 @@ local function rebuildCategories()
 	}
 
 	for _, song in ipairs(songs) do
-		categorySet[getSongCategory(song)] = true
+		categorySet[
+			getSongCategory(song)
+		] = true
 	end
 
 	local categories = {}
@@ -803,24 +939,27 @@ local function rebuildCategories()
 	end)
 
 	for index, category in ipairs(categories) do
-		createCategoryButton(category, index)
+		createCategoryButton(
+			category,
+			index
+		)
 	end
 
 	selectedCategory = "All"
 
-	-- Select All automatically.
-	local allButton = CategoryPanel:FindFirstChild("All")
+	local allButton =
+		CategoryPanel:FindFirstChild("All")
 
-	if allButton and allButton:IsA("TextButton") then
+	if allButton
+		and allButton:IsA("TextButton") then
+
 		allButton.BackgroundTransparency = 0.78
+
 		allButton.TextColor3 =
 			Color3.fromRGB(235, 242, 255)
 	end
 
-	-- Populate All songs.
-	if allButton and allButton:IsA("TextButton") then
-		allButton:Activate()
-	end
+	refreshSongDisplay()
 end
 
 --==================================================
@@ -828,22 +967,46 @@ end
 --==================================================
 
 local function loadSongs()
-	if isPlaying then
-		stopSong()
+	if isLoading then
+		return
 	end
+
+	isLoading = true
+	loadGeneration += 1
+
+	local currentGeneration =
+		loadGeneration
+
+	stopSong()
 
 	songs = {}
 
 	clearContainer(CategoryPanel)
 	clearContainer(SongPanel)
 
-	setStatus("Loading songs...")
+	setStatus(
+		"Loading v"
+			.. VERSION
+			.. " songs..."
+	)
 
 	local success, body =
 		pcall(httpGet, GITHUB_SONGS_URL)
 
+	if currentGeneration ~= loadGeneration then
+		isLoading = false
+		return
+	end
+
 	if not success then
 		setStatus("GitHub loading failed")
+
+		warn(
+			"PianoPlayer:",
+			body
+		)
+
+		isLoading = false
 		return
 	end
 
@@ -852,21 +1015,35 @@ local function loadSongs()
 			return HttpService:JSONDecode(body)
 		end)
 
+	if currentGeneration ~= loadGeneration then
+		isLoading = false
+		return
+	end
+
 	if not decodeSuccess
 		or type(entries) ~= "table" then
 
 		setStatus("Invalid GitHub response")
+		isLoading = false
 		return
 	end
 
+	local loadedCount = 0
+	local failedCount = 0
+
 	for _, entry in ipairs(entries) do
+		if currentGeneration ~= loadGeneration then
+			isLoading = false
+			return
+		end
 
 		if type(entry) == "table"
 			and entry.type == "file"
 			and type(entry.name) == "string"
 			and entry.name:lower():sub(-4) == ".lua" then
 
-			local downloadUrl = entry.download_url
+			local downloadUrl =
+				entry.download_url
 
 			if type(downloadUrl) == "string"
 				and downloadUrl ~= "" then
@@ -882,21 +1059,66 @@ local function loadSongs()
 						)
 
 					if song then
-						table.insert(songs, song)
+						table.insert(
+							songs,
+							song
+						)
+
+						loadedCount += 1
 					else
-						warn(errorMessage)
+						failedCount += 1
+
+						warn(
+							"PianoPlayer:",
+							errorMessage
+						)
 					end
+				else
+					failedCount += 1
+
+					warn(
+						"PianoPlayer failed to download "
+							.. tostring(entry.name)
+							.. ": "
+							.. tostring(source)
+					)
 				end
+			else
+				failedCount += 1
+
+				warn(
+					"PianoPlayer: No download URL for "
+						.. tostring(entry.name)
+				)
 			end
 		end
 	end
 
+	if currentGeneration ~= loadGeneration then
+		isLoading = false
+		return
+	end
+
 	rebuildCategories()
 
-	setStatus(
-		tostring(#songs)
-			.. " songs loaded"
-	)
+	if failedCount > 0 then
+		setStatus(
+			string.format(
+				"%d songs loaded • %d failed",
+				loadedCount,
+				failedCount
+			)
+		)
+	else
+		setStatus(
+			string.format(
+				"%d songs loaded",
+				loadedCount
+			)
+		)
+	end
+
+	isLoading = false
 end
 
 --==================================================
@@ -908,7 +1130,10 @@ StopButton.Activated:Connect(function()
 end)
 
 RefreshButton.Activated:Connect(function()
-	stopSong()
+	if isLoading then
+		return
+	end
+
 	task.spawn(loadSongs)
 end)
 
@@ -922,4 +1147,3 @@ end)
 --==================================================
 
 task.spawn(loadSongs)
-
