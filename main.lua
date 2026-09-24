@@ -8,14 +8,16 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 local DEFAULT_KEY_DELAY = 0.05
-local GITHUB_SONGS_URL = "https://api.github.com/repos/ShadowDev1231/PianoPlayer/contents/songs?ref=main"
 
---//==================================================
---// PianoModule
---//==================================================
+local GITHUB_SONGS_URL =
+	"https://api.github.com/repos/ShadowDev1231/PianoPlayer/contents/songs?ref=main"
 
-local PIANO_MODULE_URL = "https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/refs/heads/main/PianoModule.lua"
-local PianoPlayer = nil
+local PIANO_MODULE_URL =
+	"https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/refs/heads/main/PianoModule.lua"
+
+--==================================================
+-- HTTP
+--==================================================
 
 local function getRequestFunction()
 	return (typeof(request) == "function" and request)
@@ -41,17 +43,28 @@ local function httpGet(url: string): string
 	end
 
 	if response.StatusCode and response.StatusCode ~= 200 then
-		error("HTTP " .. tostring(response.StatusCode) .. " while requesting " .. url)
+		error(
+			"HTTP "
+				.. tostring(response.StatusCode)
+				.. " while requesting "
+				.. url
+		)
 	end
 
 	local body = response.Body
 
 	if type(body) ~= "string" or body == "" then
-		error("HTTP request returned an empty response for " .. url)
+		error("HTTP request returned an empty response.")
 	end
 
 	return body
 end
+
+--==================================================
+-- Piano Module
+--==================================================
+
+local PianoPlayer = nil
 
 local function loadPianoModule()
 	local source = httpGet(PIANO_MODULE_URL)
@@ -59,13 +72,19 @@ local function loadPianoModule()
 	local compiled, compileError = loadstring(source)
 
 	if not compiled then
-		error("Failed to compile PianoModule.lua: " .. tostring(compileError))
+		error(
+			"Failed to compile PianoModule.lua: "
+				.. tostring(compileError)
+		)
 	end
 
 	local success, module = pcall(compiled)
 
 	if not success then
-		error("Failed to execute PianoModule.lua: " .. tostring(module))
+		error(
+			"Failed to execute PianoModule.lua: "
+				.. tostring(module)
+		)
 	end
 
 	if type(module) ~= "table" then
@@ -89,18 +108,38 @@ do
 	end
 end
 
---//==================================================
---// Playback state
---//==================================================
+--==================================================
+-- State
+--==================================================
 
 local isPlaying = false
 local stopRequested = false
 local playbackThread: thread? = nil
 local playbackId = 0
 
---//==================================================
---// ScreenGui
---//==================================================
+local songs: {Song} = {}
+local selectedCategory = "All"
+
+--==================================================
+-- Song type
+--==================================================
+
+type Song = {
+	Name: string?,
+	Category: string?,
+	Type: string?,
+
+	playKey: ((self: any, key: string, keyDelay: number?) -> ())?,
+	play: ((self: any, piano: any) -> ())?,
+	Play: ((self: any, piano: any) -> ())?,
+
+	Keys: string?,
+	KeyDelay: number?
+}
+
+--==================================================
+-- GUI
+--==================================================
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "SongUI"
@@ -109,332 +148,278 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 100
 ScreenGui.Parent = playerGui
 
---//==================================================
---// Main glass window
---//==================================================
+--==================================================
+-- Main glass window
+--==================================================
 
 local Frame = Instance.new("Frame")
 Frame.Name = "Frame"
-Frame.Size = UDim2.fromScale(0.52, 0.63)
-Frame.Position = UDim2.fromScale(0.24, 0.185)
-Frame.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
-Frame.BackgroundTransparency = 0.14
+Frame.Size = UDim2.fromScale(0.58, 0.68)
+Frame.Position = UDim2.fromScale(0.21, 0.16)
+Frame.BackgroundColor3 = Color3.fromRGB(15, 19, 29)
+Frame.BackgroundTransparency = 0.08
 Frame.BorderSizePixel = 0
-Frame.ClipsDescendants = false
 Frame.Parent = ScreenGui
 
 local FrameCorner = Instance.new("UICorner")
-FrameCorner.CornerRadius = UDim.new(0, 18)
+FrameCorner.CornerRadius = UDim.new(0, 20)
 FrameCorner.Parent = Frame
 
 local FrameGradient = Instance.new("UIGradient")
 FrameGradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 42, 58)),
-	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(22, 28, 42)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 18, 28))
+	ColorSequenceKeypoint.new(
+		0,
+		Color3.fromRGB(40, 48, 70)
+	),
+
+	ColorSequenceKeypoint.new(
+		0.5,
+		Color3.fromRGB(22, 27, 42)
+	),
+
+	ColorSequenceKeypoint.new(
+		1,
+		Color3.fromRGB(12, 16, 25)
+	)
 })
 FrameGradient.Rotation = 135
 FrameGradient.Parent = Frame
 
 local FrameStroke = Instance.new("UIStroke")
-FrameStroke.Color = Color3.fromRGB(150, 180, 255)
+FrameStroke.Color = Color3.fromRGB(155, 180, 255)
 FrameStroke.Transparency = 0.72
-FrameStroke.Thickness = 1.25
+FrameStroke.Thickness = 1.3
 FrameStroke.Parent = Frame
 
---// Soft shadow
+--==================================================
+-- Shadow
+--==================================================
+
 local Shadow = Instance.new("Frame")
 Shadow.Name = "Shadow"
-Shadow.Size = UDim2.new(1, 16, 1, 16)
-Shadow.Position = UDim2.new(0, -8, 0, 10)
+Shadow.Size = UDim2.new(1, 18, 1, 18)
+Shadow.Position = UDim2.new(0, -9, 0, 10)
 Shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-Shadow.BackgroundTransparency = 0.65
+Shadow.BackgroundTransparency = 0.6
 Shadow.BorderSizePixel = 0
-Shadow.ZIndex = Frame.ZIndex - 1
+Shadow.ZIndex = 0
 Shadow.Parent = Frame
 
 local ShadowCorner = Instance.new("UICorner")
-ShadowCorner.CornerRadius = UDim.new(0, 22)
+ShadowCorner.CornerRadius = UDim.new(0, 23)
 ShadowCorner.Parent = Shadow
 
---//==================================================
---// Header
---//==================================================
+--==================================================
+-- TOP MUSIC PLAYER
+--==================================================
 
-local Header = Instance.new("Frame")
-Header.Name = "Header"
-Header.Size = UDim2.new(1, -24, 0, 58)
-Header.Position = UDim2.new(0, 12, 0, 10)
-Header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-Header.BackgroundTransparency = 0.93
-Header.BorderSizePixel = 0
-Header.Parent = Frame
+local PlayerBar = Instance.new("Frame")
+PlayerBar.Name = "MusicPlayer"
+PlayerBar.Size = UDim2.new(1, -24, 0, 78)
+PlayerBar.Position = UDim2.new(0, 12, 0, 12)
+PlayerBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+PlayerBar.BackgroundTransparency = 0.91
+PlayerBar.BorderSizePixel = 0
+PlayerBar.Parent = Frame
 
-local HeaderCorner = Instance.new("UICorner")
-HeaderCorner.CornerRadius = UDim.new(0, 13)
-HeaderCorner.Parent = Header
+local PlayerCorner = Instance.new("UICorner")
+PlayerCorner.CornerRadius = UDim.new(0, 15)
+PlayerCorner.Parent = PlayerBar
 
-local HeaderStroke = Instance.new("UIStroke")
-HeaderStroke.Color = Color3.fromRGB(255, 255, 255)
-HeaderStroke.Transparency = 0.9
-HeaderStroke.Thickness = 1
-HeaderStroke.Parent = Header
+local PlayerStroke = Instance.new("UIStroke")
+PlayerStroke.Color = Color3.fromRGB(255, 255, 255)
+PlayerStroke.Transparency = 0.88
+PlayerStroke.Parent = PlayerBar
 
-local Title = Instance.new("TextLabel")
-Title.Name = "Title"
-Title.Size = UDim2.new(1, -90, 0, 28)
-Title.Position = UDim2.new(0, 16, 0, 7)
-Title.BackgroundTransparency = 1
-Title.Text = "Piano Player"
-Title.TextColor3 = Color3.fromRGB(245, 248, 255)
-Title.TextSize = 20
-Title.Font = Enum.Font.GothamBold
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = Header
+-- Piano icon
+local PianoIcon = Instance.new("TextLabel")
+PianoIcon.Name = "PianoIcon"
+PianoIcon.Size = UDim2.fromOffset(42, 42)
+PianoIcon.Position = UDim2.new(0, 12, 0.5, -21)
+PianoIcon.BackgroundColor3 = Color3.fromRGB(105, 135, 220)
+PianoIcon.BackgroundTransparency = 0.2
+PianoIcon.BorderSizePixel = 0
+PianoIcon.Text = "♫"
+PianoIcon.TextColor3 = Color3.fromRGB(240, 245, 255)
+PianoIcon.TextSize = 22
+PianoIcon.Font = Enum.Font.GothamBold
+PianoIcon.Parent = PlayerBar
 
-local Subtitle = Instance.new("TextLabel")
-Subtitle.Name = "Subtitle"
-Subtitle.Size = UDim2.new(1, -90, 0, 18)
-Subtitle.Position = UDim2.new(0, 17, 0, 32)
-Subtitle.BackgroundTransparency = 1
-Subtitle.Text = "Your songs • Your piano • Your performance"
-Subtitle.TextColor3 = Color3.fromRGB(160, 170, 190)
-Subtitle.TextSize = 11
-Subtitle.Font = Enum.Font.Gotham
-Subtitle.TextXAlignment = Enum.TextXAlignment.Left
-Subtitle.Parent = Header
+local PianoIconCorner = Instance.new("UICorner")
+PianoIconCorner.CornerRadius = UDim.new(0, 11)
+PianoIconCorner.Parent = PianoIcon
 
---//==================================================
---// Close button
---//==================================================
-
-local CloseButton = Instance.new("TextButton")
-CloseButton.Name = "CloseButton"
-CloseButton.Size = UDim2.fromOffset(34, 34)
-CloseButton.Position = UDim2.new(1, -45, 0, 12)
-CloseButton.BackgroundColor3 = Color3.fromRGB(255, 85, 105)
-CloseButton.BackgroundTransparency = 0.2
-CloseButton.BorderSizePixel = 0
-CloseButton.Text = "×"
-CloseButton.TextColor3 = Color3.fromRGB(255, 235, 240)
-CloseButton.TextSize = 22
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.AutoButtonColor = false
-CloseButton.Parent = Header
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 10)
-CloseCorner.Parent = CloseButton
-
-local CloseStroke = Instance.new("UIStroke")
-CloseStroke.Color = Color3.fromRGB(255, 130, 145)
-CloseStroke.Transparency = 0.45
-CloseStroke.Parent = CloseButton
-
---//==================================================
---// Content area
---//==================================================
-
-local Tab = Instance.new("ScrollingFrame")
-Tab.Name = "Tab"
-Tab.Size = UDim2.new(0.30, -8, 1, -145)
-Tab.Position = UDim2.new(0, 12, 0, 80)
-Tab.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-Tab.BackgroundTransparency = 0.94
-Tab.BorderSizePixel = 0
-Tab.ScrollBarThickness = 3
-Tab.ScrollBarImageColor3 = Color3.fromRGB(130, 155, 220)
-Tab.ScrollBarImageTransparency = 0.35
-Tab.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Tab.ScrollingDirection = Enum.ScrollingDirection.Y
-Tab.CanvasSize = UDim2.new()
-Tab.Parent = Frame
-
-local TabCorner = Instance.new("UICorner")
-TabCorner.CornerRadius = UDim.new(0, 13)
-TabCorner.Parent = Tab
-
-local TabStroke = Instance.new("UIStroke")
-TabStroke.Color = Color3.fromRGB(255, 255, 255)
-TabStroke.Transparency = 0.9
-TabStroke.Thickness = 1
-TabStroke.Parent = Tab
-
-local TabPadding = Instance.new("UIPadding")
-TabPadding.PaddingTop = UDim.new(0, 8)
-TabPadding.PaddingBottom = UDim.new(0, 8)
-TabPadding.PaddingLeft = UDim.new(0, 8)
-TabPadding.PaddingRight = UDim.new(0, 8)
-TabPadding.Parent = Tab
-
-local TabLayout = Instance.new("UIListLayout")
-TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-TabLayout.Padding = UDim.new(0, 6)
-TabLayout.Parent = Tab
-
---//==================================================
---// Song content panel
---//==================================================
-
-local Content = Instance.new("ScrollingFrame")
-Content.Name = "Content"
-Content.Size = UDim2.new(0.70, -20, 1, -145)
-Content.Position = UDim2.new(0.30, 8, 0, 80)
-Content.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-Content.BackgroundTransparency = 0.94
-Content.BorderSizePixel = 0
-Content.ScrollBarThickness = 3
-Content.ScrollBarImageColor3 = Color3.fromRGB(130, 155, 220)
-Content.ScrollBarImageTransparency = 0.35
-Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Content.ScrollingDirection = Enum.ScrollingDirection.Y
-Content.CanvasSize = UDim2.new()
-Content.Parent = Frame
-
-local ContentCorner = Instance.new("UICorner")
-ContentCorner.CornerRadius = UDim.new(0, 13)
-ContentCorner.Parent = Content
-
-local ContentStroke = Instance.new("UIStroke")
-ContentStroke.Color = Color3.fromRGB(255, 255, 255)
-ContentStroke.Transparency = 0.9
-ContentStroke.Thickness = 1
-ContentStroke.Parent = Content
-
-local ContentPadding = Instance.new("UIPadding")
-ContentPadding.PaddingTop = UDim.new(0, 10)
-ContentPadding.PaddingBottom = UDim.new(0, 10)
-ContentPadding.PaddingLeft = UDim.new(0, 12)
-ContentPadding.PaddingRight = UDim.new(0, 12)
-ContentPadding.Parent = Content
-
-local ContentLayout = Instance.new("UIListLayout")
-ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ContentLayout.Padding = UDim.new(0, 7)
-ContentLayout.Parent = Content
-
---//==================================================
---// Bottom control bar
---//==================================================
-
-local BottomBar = Instance.new("Frame")
-BottomBar.Name = "BottomBar"
-BottomBar.Size = UDim2.new(1, -24, 0, 42)
-BottomBar.Position = UDim2.new(0, 12, 1, -54)
-BottomBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-BottomBar.BackgroundTransparency = 0.94
-BottomBar.BorderSizePixel = 0
-BottomBar.Parent = Frame
-
-local BottomCorner = Instance.new("UICorner")
-BottomCorner.CornerRadius = UDim.new(0, 12)
-BottomCorner.Parent = BottomBar
-
-local BottomStroke = Instance.new("UIStroke")
-BottomStroke.Color = Color3.fromRGB(255, 255, 255)
-BottomStroke.Transparency = 0.9
-BottomStroke.Parent = BottomBar
-
---//==================================================
---// Status
---//==================================================
+local PlayerTitle = Instance.new("TextLabel")
+PlayerTitle.Name = "PlayerTitle"
+PlayerTitle.Size = UDim2.new(0.45, 0, 0, 25)
+PlayerTitle.Position = UDim2.new(0, 66, 0, 14)
+PlayerTitle.BackgroundTransparency = 1
+PlayerTitle.Text = "PIANO PLAYER"
+PlayerTitle.TextColor3 = Color3.fromRGB(240, 244, 255)
+PlayerTitle.TextSize = 14
+PlayerTitle.Font = Enum.Font.GothamBold
+PlayerTitle.TextXAlignment = Enum.TextXAlignment.Left
+PlayerTitle.Parent = PlayerBar
 
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Name = "StatusLabel"
-StatusLabel.Size = UDim2.new(1, -190, 1, 0)
-StatusLabel.Position = UDim2.new(0, 13, 0, 0)
+StatusLabel.Size = UDim2.new(0.45, 0, 0, 23)
+StatusLabel.Position = UDim2.new(0, 66, 0, 38)
 StatusLabel.BackgroundTransparency = 1
 StatusLabel.Text = "Ready"
-StatusLabel.TextColor3 = Color3.fromRGB(185, 195, 215)
-StatusLabel.TextSize = 12
-StatusLabel.Font = Enum.Font.GothamMedium
+StatusLabel.TextColor3 = Color3.fromRGB(160, 170, 195)
+StatusLabel.TextSize = 11
+StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
-StatusLabel.Parent = BottomBar
+StatusLabel.Parent = PlayerBar
 
---//==================================================
---// Buttons
---//==================================================
+--==================================================
+-- STOP
+--==================================================
+
+local StopButton = Instance.new("TextButton")
+StopButton.Name = "StopButton"
+StopButton.Size = UDim2.fromOffset(72, 34)
+StopButton.Position = UDim2.new(1, -162, 0.5, -17)
+StopButton.BackgroundColor3 = Color3.fromRGB(225, 75, 100)
+StopButton.BackgroundTransparency = 0.12
+StopButton.BorderSizePixel = 0
+StopButton.Text = "STOP"
+StopButton.TextColor3 = Color3.fromRGB(255, 235, 240)
+StopButton.TextSize = 11
+StopButton.Font = Enum.Font.GothamBold
+StopButton.AutoButtonColor = false
+StopButton.Parent = PlayerBar
+
+local StopCorner = Instance.new("UICorner")
+StopCorner.CornerRadius = UDim.new(0, 9)
+StopCorner.Parent = StopButton
+
+--==================================================
+-- REFRESH
+--==================================================
 
 local RefreshButton = Instance.new("TextButton")
 RefreshButton.Name = "RefreshButton"
-RefreshButton.Size = UDim2.fromOffset(70, 28)
-RefreshButton.Position = UDim2.new(1, -150, 0.5, -14)
-RefreshButton.BackgroundColor3 = Color3.fromRGB(105, 140, 220)
-RefreshButton.BackgroundTransparency = 0.18
+RefreshButton.Size = UDim2.fromOffset(82, 34)
+RefreshButton.Position = UDim2.new(1, -80, 0.5, -17)
+RefreshButton.BackgroundColor3 = Color3.fromRGB(100, 135, 220)
+RefreshButton.BackgroundTransparency = 0.12
 RefreshButton.BorderSizePixel = 0
 RefreshButton.Text = "REFRESH"
 RefreshButton.TextColor3 = Color3.fromRGB(235, 242, 255)
 RefreshButton.TextSize = 10
 RefreshButton.Font = Enum.Font.GothamBold
 RefreshButton.AutoButtonColor = false
-RefreshButton.Parent = BottomBar
+RefreshButton.Parent = PlayerBar
 
 local RefreshCorner = Instance.new("UICorner")
-RefreshCorner.CornerRadius = UDim.new(0, 8)
+RefreshCorner.CornerRadius = UDim.new(0, 9)
 RefreshCorner.Parent = RefreshButton
 
-local RefreshStroke = Instance.new("UIStroke")
-RefreshStroke.Color = Color3.fromRGB(150, 180, 255)
-RefreshStroke.Transparency = 0.5
-RefreshStroke.Parent = RefreshButton
+--==================================================
+-- CLOSE
+--==================================================
 
-local StopButton = Instance.new("TextButton")
-StopButton.Name = "StopButton"
-StopButton.Size = UDim2.fromOffset(60, 28)
-StopButton.Position = UDim2.new(1, -76, 0.5, -14)
-StopButton.BackgroundColor3 = Color3.fromRGB(225, 75, 100)
-StopButton.BackgroundTransparency = 0.12
-StopButton.BorderSizePixel = 0
-StopButton.Text = "STOP"
-StopButton.TextColor3 = Color3.fromRGB(255, 235, 240)
-StopButton.TextSize = 10
-StopButton.Font = Enum.Font.GothamBold
-StopButton.AutoButtonColor = false
-StopButton.Parent = BottomBar
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Size = UDim2.fromOffset(30, 30)
+CloseButton.Position = UDim2.new(1, -40, 0, -2)
+CloseButton.BackgroundColor3 = Color3.fromRGB(230, 75, 100)
+CloseButton.BackgroundTransparency = 0.1
+CloseButton.BorderSizePixel = 0
+CloseButton.Text = "×"
+CloseButton.TextColor3 = Color3.fromRGB(255, 240, 245)
+CloseButton.TextSize = 20
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.AutoButtonColor = false
+CloseButton.ZIndex = 20
+CloseButton.Parent = Frame
 
-local StopCorner = Instance.new("UICorner")
-StopCorner.CornerRadius = UDim.new(0, 8)
-StopCorner.Parent = StopButton
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 9)
+CloseCorner.Parent = CloseButton
 
-local StopStroke = Instance.new("UIStroke")
-StopStroke.Color = Color3.fromRGB(255, 130, 150)
-StopStroke.Transparency = 0.45
-StopStroke.Parent = StopButton
+--==================================================
+-- CATEGORY PANEL
+--==================================================
 
---//==================================================
---// Button hover effects
---//==================================================
+local CategoryPanel = Instance.new("ScrollingFrame")
+CategoryPanel.Name = "Categories"
+CategoryPanel.Size = UDim2.new(0.28, -8, 1, -106)
+CategoryPanel.Position = UDim2.new(0, 12, 0, 102)
+CategoryPanel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+CategoryPanel.BackgroundTransparency = 0.94
+CategoryPanel.BorderSizePixel = 0
+CategoryPanel.ScrollBarThickness = 3
+CategoryPanel.ScrollBarImageColor3 = Color3.fromRGB(120, 150, 220)
+CategoryPanel.AutomaticCanvasSize = Enum.AutomaticSize.Y
+CategoryPanel.ScrollingDirection = Enum.ScrollingDirection.Y
+CategoryPanel.Parent = Frame
 
-local function addHover(button: TextButton, normalTransparency: number)
-	button.MouseEnter:Connect(function()
-		TweenService:Create(
-			button,
-			TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{
-				BackgroundTransparency = math.max(0, normalTransparency - 0.1)
-			}
-		):Play()
-	end)
+local CategoryCorner = Instance.new("UICorner")
+CategoryCorner.CornerRadius = UDim.new(0, 14)
+CategoryCorner.Parent = CategoryPanel
 
-	button.MouseLeave:Connect(function()
-		TweenService:Create(
-			button,
-			TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{
-				BackgroundTransparency = normalTransparency
-			}
-		):Play()
-	end)
-end
+local CategoryStroke = Instance.new("UIStroke")
+CategoryStroke.Color = Color3.fromRGB(255, 255, 255)
+CategoryStroke.Transparency = 0.9
+CategoryStroke.Parent = CategoryPanel
 
-addHover(CloseButton, 0.2)
-addHover(RefreshButton, 0.18)
-addHover(StopButton, 0.12)
+local CategoryPadding = Instance.new("UIPadding")
+CategoryPadding.PaddingTop = UDim.new(0, 9)
+CategoryPadding.PaddingBottom = UDim.new(0, 9)
+CategoryPadding.PaddingLeft = UDim.new(0, 8)
+CategoryPadding.PaddingRight = UDim.new(0, 8)
+CategoryPadding.Parent = CategoryPanel
 
---//==================================================
---// Helpers
---//==================================================
+local CategoryLayout = Instance.new("UIListLayout")
+CategoryLayout.Padding = UDim.new(0, 6)
+CategoryLayout.SortOrder = Enum.SortOrder.LayoutOrder
+CategoryLayout.Parent = CategoryPanel
+
+--==================================================
+-- SONG PANEL
+--==================================================
+
+local SongPanel = Instance.new("ScrollingFrame")
+SongPanel.Name = "Songs"
+SongPanel.Size = UDim2.new(0.72, -20, 1, -106)
+SongPanel.Position = UDim2.new(0.28, 8, 0, 102)
+SongPanel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SongPanel.BackgroundTransparency = 0.94
+SongPanel.BorderSizePixel = 0
+SongPanel.ScrollBarThickness = 3
+SongPanel.ScrollBarImageColor3 = Color3.fromRGB(120, 150, 220)
+SongPanel.AutomaticCanvasSize = Enum.AutomaticSize.Y
+SongPanel.ScrollingDirection = Enum.ScrollingDirection.Y
+SongPanel.Parent = Frame
+
+local SongCorner = Instance.new("UICorner")
+SongCorner.CornerRadius = UDim.new(0, 14)
+SongCorner.Parent = SongPanel
+
+local SongStroke = Instance.new("UIStroke")
+SongStroke.Color = Color3.fromRGB(255, 255, 255)
+SongStroke.Transparency = 0.9
+SongStroke.Parent = SongPanel
+
+local SongPadding = Instance.new("UIPadding")
+SongPadding.PaddingTop = UDim.new(0, 9)
+SongPadding.PaddingBottom = UDim.new(0, 9)
+SongPadding.PaddingLeft = UDim.new(0, 9)
+SongPadding.PaddingRight = UDim.new(0, 9)
+SongPadding.Parent = SongPanel
+
+local SongLayout = Instance.new("UIListLayout")
+SongLayout.Padding = UDim.new(0, 7)
+SongLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SongLayout.Parent = SongPanel
+
+--==================================================
+-- Helpers
+--==================================================
 
 local function setStatus(text: string)
 	StatusLabel.Text = text
@@ -446,6 +431,7 @@ local function clearContainer(container: Instance)
 			and not child:IsA("UIPadding")
 			and not child:IsA("UIStroke")
 			and not child:IsA("UICorner") then
+
 			child:Destroy()
 		end
 	end
@@ -456,16 +442,11 @@ local function getFileName(path: string): string
 	return name:gsub("%.lua$", "")
 end
 
-type Song = {
-	Name: string?,
-	playKey: ((self: any, key: string, keyDelay: number?) -> ())?,
-	play: ((self: any, piano: any) -> ())?,
-	Play: ((self: any, piano: any) -> ())?,
-	Keys: string?,
-	KeyDelay: number?
-}
+local function loadSongSource(
+	source: string,
+	displayName: string
+): (Song?, string?)
 
-local function loadSongSource(source: string, displayName: string): (Song?, string?)
 	if source == "" then
 		return nil, "Song file is empty: " .. displayName
 	end
@@ -473,13 +454,21 @@ local function loadSongSource(source: string, displayName: string): (Song?, stri
 	local compiled, compileError = loadstring(source)
 
 	if not compiled then
-		return nil, "Compile error in " .. displayName .. ": " .. tostring(compileError)
+		return nil,
+			"Compile error in "
+				.. displayName
+				.. ": "
+				.. tostring(compileError)
 	end
 
 	local success, result = pcall(compiled)
 
 	if not success then
-		return nil, "Runtime error in " .. displayName .. ": " .. tostring(result)
+		return nil,
+			"Runtime error in "
+				.. displayName
+				.. ": "
+				.. tostring(result)
 	end
 
 	if type(result) ~= "table" then
@@ -489,9 +478,9 @@ local function loadSongSource(source: string, displayName: string): (Song?, stri
 	return result :: Song, nil
 end
 
---//==================================================
---// FIXED STOP FUNCTION
---//==================================================
+--==================================================
+-- STOP SONG
+--==================================================
 
 local function stopSong()
 	if not isPlaying and not playbackThread then
@@ -500,13 +489,8 @@ local function stopSong()
 	end
 
 	stopRequested = true
-
-	-- Invalidate the current playback.
 	playbackId += 1
 
-	-- Cancel the actual playback task.
-	-- This fixes songs that use their own play() function
-	-- and do not check stopRequested themselves.
 	local currentThread = playbackThread
 
 	if currentThread then
@@ -521,6 +505,10 @@ local function stopSong()
 
 	setStatus("Stopped")
 end
+
+--==================================================
+-- PLAY SONG
+--==================================================
 
 local function playSong(song: Song, fallbackName: string)
 	if not PianoPlayer then
@@ -545,6 +533,7 @@ local function playSong(song: Song, fallbackName: string)
 
 	local function playback()
 		local success, errorMessage = pcall(function()
+
 			local playFunction = song.play or song.Play
 
 			if type(playFunction) == "function" then
@@ -557,7 +546,8 @@ local function playSong(song: Song, fallbackName: string)
 				local keys = song.Keys:gsub("%s+", "")
 
 				for index = 1, #keys do
-					if stopRequested or currentPlaybackId ~= playbackId then
+					if stopRequested
+						or currentPlaybackId ~= playbackId then
 						return
 					end
 
@@ -576,8 +566,6 @@ local function playSong(song: Song, fallbackName: string)
 			)
 		end)
 
-		-- Only the currently active playback is allowed
-		-- to update the UI/state.
 		if currentPlaybackId ~= playbackId then
 			return
 		end
@@ -599,215 +587,328 @@ local function playSong(song: Song, fallbackName: string)
 	playbackThread = task.spawn(playback)
 end
 
---//==================================================
---// Song buttons
---//==================================================
+--==================================================
+-- SONG CATEGORY
+--==================================================
 
-local function createSongButton(song: Song, fileName: string, layoutOrder: number)
+local function getSongCategory(song: Song): string
+	if type(song.Category) == "string"
+		and song.Category ~= "" then
+		return song.Category
+	end
+
+	if type(song.Type) == "string"
+		and song.Type ~= "" then
+		return song.Type
+	end
+
+	return "Other"
+end
+
+--==================================================
+-- CATEGORY BUTTON
+--==================================================
+
+local function createCategoryButton(
+	category: string,
+	layoutOrder: number
+)
+
 	local button = Instance.new("TextButton")
-	button.Name = fileName
-	button.Size = UDim2.new(1, 0, 0, 38)
+	button.Name = category
+	button.Size = UDim2.new(1, 0, 0, 40)
 	button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	button.BackgroundTransparency = 0.91
+	button.BackgroundTransparency = 0.93
 	button.BorderSizePixel = 0
-	button.Text = song.Name or fileName
-	button.TextColor3 = Color3.fromRGB(220, 228, 245)
+	button.Text = category
+	button.TextColor3 = Color3.fromRGB(195, 205, 225)
 	button.TextSize = 12
 	button.Font = Enum.Font.GothamMedium
 	button.TextXAlignment = Enum.TextXAlignment.Left
 	button.AutoButtonColor = false
 	button.LayoutOrder = layoutOrder
-	button.Parent = Tab
+	button.Parent = CategoryPanel
 
 	local padding = Instance.new("UIPadding")
 	padding.PaddingLeft = UDim.new(0, 12)
-	padding.PaddingRight = UDim.new(0, 8)
 	padding.Parent = button
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 9)
 	corner.Parent = button
 
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(255, 255, 255)
-	stroke.Transparency = 0.94
-	stroke.Thickness = 1
-	stroke.Parent = button
-
-	button.MouseEnter:Connect(function()
-		TweenService:Create(
-			button,
-			TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{
-				BackgroundTransparency = 0.84
-			}
-		):Play()
-
-		TweenService:Create(
-			stroke,
-			TweenInfo.new(0.15),
-			{
-				Transparency = 0.72
-			}
-		):Play()
-	end)
-
-	button.MouseLeave:Connect(function()
-		TweenService:Create(
-			button,
-			TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{
-				BackgroundTransparency = 0.91
-			}
-		):Play()
-
-		TweenService:Create(
-			stroke,
-			TweenInfo.new(0.15),
-			{
-				Transparency = 0.94
-			}
-		):Play()
-	end)
-
 	button.Activated:Connect(function()
-		task.spawn(function()
-			playSong(song, fileName)
-		end)
+		selectedCategory = category
+
+		for _, child in ipairs(CategoryPanel:GetChildren()) do
+			if child:IsA("TextButton") then
+				child.BackgroundTransparency = 0.93
+				child.TextColor3 =
+					Color3.fromRGB(195, 205, 225)
+			end
+		end
+
+		button.BackgroundTransparency = 0.78
+		button.TextColor3 =
+			Color3.fromRGB(235, 242, 255)
+
+		-- Refresh visible songs.
+		clearContainer(SongPanel)
+
+		local visibleCount = 0
+
+		for _, songData in ipairs(songs) do
+			local songCategory =
+				getSongCategory(songData)
+
+			if category == "All"
+				or songCategory == category then
+
+				visibleCount += 1
+
+				local songButton = Instance.new("TextButton")
+				songButton.Name =
+					songData.Name or "Song"
+
+				songButton.Size =
+					UDim2.new(1, 0, 0, 46)
+
+				songButton.BackgroundColor3 =
+					Color3.fromRGB(255, 255, 255)
+
+				songButton.BackgroundTransparency = 0.91
+				songButton.BorderSizePixel = 0
+
+				songButton.Text =
+					"  "
+						.. (songData.Name or "Unnamed Song")
+
+				songButton.TextColor3 =
+					Color3.fromRGB(220, 228, 245)
+
+				songButton.TextSize = 12
+				songButton.Font = Enum.Font.GothamMedium
+				songButton.TextXAlignment =
+					Enum.TextXAlignment.Left
+
+				songButton.AutoButtonColor = false
+				songButton.LayoutOrder = visibleCount
+				songButton.Parent = SongPanel
+
+				local songCorner = Instance.new("UICorner")
+				songCorner.CornerRadius = UDim.new(0, 10)
+				songCorner.Parent = songButton
+
+				local songStroke = Instance.new("UIStroke")
+				songStroke.Color =
+					Color3.fromRGB(255, 255, 255)
+
+				songStroke.Transparency = 0.94
+				songStroke.Parent = songButton
+
+				songButton.MouseEnter:Connect(function()
+					TweenService:Create(
+						songButton,
+						TweenInfo.new(0.15),
+						{
+							BackgroundTransparency = 0.82
+						}
+					):Play()
+
+					TweenService:Create(
+						songStroke,
+						TweenInfo.new(0.15),
+						{
+							Transparency = 0.75
+						}
+					):Play()
+				end)
+
+				songButton.MouseLeave:Connect(function()
+					TweenService:Create(
+						songButton,
+						TweenInfo.new(0.15),
+						{
+							BackgroundTransparency = 0.91
+						}
+					):Play()
+
+					TweenService:Create(
+						songStroke,
+						TweenInfo.new(0.15),
+						{
+							Transparency = 0.94
+						}
+					):Play()
+				end)
+
+				songButton.Activated:Connect(function()
+					task.spawn(function()
+						playSong(
+							songData,
+							songData.Name or "Song"
+						)
+					end)
+				end)
+			end
+		end
+
+		if visibleCount == 0 then
+			local empty = Instance.new("TextLabel")
+			empty.Size = UDim2.new(1, 0, 0, 50)
+			empty.BackgroundTransparency = 1
+			empty.Text = "No songs in this category."
+			empty.TextColor3 =
+				Color3.fromRGB(150, 160, 180)
+			empty.TextSize = 12
+			empty.Font = Enum.Font.Gotham
+			empty.Parent = SongPanel
+		end
 	end)
+
+	return button
 end
 
-local function createContentLabel(text: string)
-	local label = Instance.new("TextLabel")
-	label.Name = "ContentLabel"
-	label.Size = UDim2.new(1, 0, 0, 34)
-	label.BackgroundTransparency = 1
-	label.Text = text
-	label.TextColor3 = Color3.fromRGB(170, 180, 200)
-	label.TextSize = 12
-	label.Font = Enum.Font.Gotham
-	label.TextWrapped = true
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextYAlignment = Enum.TextYAlignment.Top
-	label.Parent = Content
+--==================================================
+-- LOAD CATEGORIES
+--==================================================
+
+local function rebuildCategories()
+	clearContainer(CategoryPanel)
+
+	local categorySet: {[string]: boolean} = {
+		All = true
+	}
+
+	for _, song in ipairs(songs) do
+		categorySet[getSongCategory(song)] = true
+	end
+
+	local categories = {}
+
+	for category in pairs(categorySet) do
+		table.insert(categories, category)
+	end
+
+	table.sort(categories, function(a, b)
+		if a == "All" then
+			return true
+		end
+
+		if b == "All" then
+			return false
+		end
+
+		return a < b
+	end)
+
+	for index, category in ipairs(categories) do
+		createCategoryButton(category, index)
+	end
+
+	selectedCategory = "All"
+
+	-- Select All automatically.
+	local allButton = CategoryPanel:FindFirstChild("All")
+
+	if allButton and allButton:IsA("TextButton") then
+		allButton.BackgroundTransparency = 0.78
+		allButton.TextColor3 =
+			Color3.fromRGB(235, 242, 255)
+	end
+
+	-- Populate All songs.
+	if allButton and allButton:IsA("TextButton") then
+		allButton:Activate()
+	end
 end
 
---//==================================================
---// Load songs
---//==================================================
+--==================================================
+-- LOAD SONGS
+--==================================================
 
 local function loadSongs()
 	if isPlaying then
 		stopSong()
 	end
 
-	clearContainer(Tab)
-	clearContainer(Content)
+	songs = {}
 
-	setStatus("Loading songs from GitHub...")
+	clearContainer(CategoryPanel)
+	clearContainer(SongPanel)
 
-	local success, body = pcall(httpGet, GITHUB_SONGS_URL)
+	setStatus("Loading songs...")
+
+	local success, body =
+		pcall(httpGet, GITHUB_SONGS_URL)
 
 	if not success then
-		createContentLabel(
-			"Could not load songs from GitHub.\n\n"
-				.. tostring(body)
-		)
-
 		setStatus("GitHub loading failed")
-		warn("PianoPlayer GitHub error:", body)
 		return
 	end
 
-	local decodeSuccess, entries = pcall(function()
-		return HttpService:JSONDecode(body)
-	end)
+	local decodeSuccess, entries =
+		pcall(function()
+			return HttpService:JSONDecode(body)
+		end)
 
-	if not decodeSuccess or type(entries) ~= "table" then
-		createContentLabel("GitHub returned invalid song folder data.")
+	if not decodeSuccess
+		or type(entries) ~= "table" then
+
 		setStatus("Invalid GitHub response")
 		return
 	end
 
-	local songsLoaded = 0
-	local luaFilesFound = 0
-
 	for _, entry in ipairs(entries) do
+
 		if type(entry) == "table"
 			and entry.type == "file"
 			and type(entry.name) == "string"
 			and entry.name:lower():sub(-4) == ".lua" then
 
-			luaFilesFound += 1
-
 			local downloadUrl = entry.download_url
 
-			if type(downloadUrl) == "string" and downloadUrl ~= "" then
-				local fileSuccess, source = pcall(httpGet, downloadUrl)
+			if type(downloadUrl) == "string"
+				and downloadUrl ~= "" then
+
+				local fileSuccess, source =
+					pcall(httpGet, downloadUrl)
 
 				if fileSuccess then
 					local song, errorMessage =
-						loadSongSource(source, entry.name)
+						loadSongSource(
+							source,
+							entry.name
+						)
 
 					if song then
-						songsLoaded += 1
-
-						createSongButton(
-							song,
-							getFileName(entry.name),
-							songsLoaded
-						)
+						table.insert(songs, song)
 					else
 						warn(errorMessage)
 					end
-				else
-					warn(
-						"Could not download "
-							.. entry.name
-							.. ": "
-							.. tostring(source)
-					)
 				end
 			end
 		end
 	end
 
-	if songsLoaded == 0 then
-		createContentLabel(
-			"No .lua songs were loaded from the GitHub songs folder."
-		)
-
-		setStatus(
-			luaFilesFound == 0
-				and "No .lua songs found"
-				or "No songs loaded"
-		)
-
-		return
-	end
-
-	createContentLabel(
-		tostring(songsLoaded)
-			.. " song(s) loaded from GitHub"
-	)
+	rebuildCategories()
 
 	setStatus(
-		tostring(songsLoaded)
+		tostring(#songs)
 			.. " songs loaded"
 	)
 end
 
---//==================================================
---// Button connections
---//==================================================
+--==================================================
+-- BUTTONS
+--==================================================
 
-StopButton.Activated:Connect(stopSong)
+StopButton.Activated:Connect(function()
+	stopSong()
+end)
 
 RefreshButton.Activated:Connect(function()
-	if isPlaying then
-		stopSong()
-	end
-
+	stopSong()
 	task.spawn(loadSongs)
 end)
 
@@ -816,9 +917,9 @@ CloseButton.Activated:Connect(function()
 	ScreenGui.Enabled = false
 end)
 
---//==================================================
---// Initial load
---//==================================================
+--==================================================
+-- INITIAL LOAD
+--==================================================
 
 task.spawn(loadSongs)
 
