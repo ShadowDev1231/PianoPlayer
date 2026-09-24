@@ -114,35 +114,25 @@ do
 
 	if not success then
 		warn("PianoPlayer:", result)
-
-		-- Fallback so the UI can still start.
 		VERSION = "unknown"
 	else
 		VERSION = result
 	end
 end
 
-local RELEASE_TAG = "v" .. VERSION
-
 --==================================================
--- RELEASE URLS
+-- GITHUB URLS
 --==================================================
-
-local GITHUB_RELEASE_BASE =
-	"https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/"
-	.. RELEASE_TAG
 
 local GITHUB_SONGS_URL =
 	GITHUB_API_BASE
-		.. "/contents/songs?ref="
-		.. RELEASE_TAG
+		.. "/contents/songs?ref=main"
 
 local PIANO_MODULE_URL =
-	GITHUB_RELEASE_BASE
-		.. "/PianoModule.lua"
+	"https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/main/PianoModule.lua"
 
 --==================================================
--- Piano Module
+-- PIANO MODULE
 --==================================================
 
 local PianoPlayer = nil
@@ -190,22 +180,7 @@ do
 end
 
 --==================================================
--- State
---==================================================
-
-local isPlaying = false
-local stopRequested = false
-local playbackThread: thread? = nil
-local playbackId = 0
-
-local isLoading = false
-local loadGeneration = 0
-
-local songs: {Song} = {}
-local selectedCategory = "All"
-
---==================================================
--- Song type
+-- SONG TYPE
 --==================================================
 
 type Song = {
@@ -218,8 +193,25 @@ type Song = {
 	Play: ((self: any, piano: any) -> ())?,
 
 	Keys: string?,
-	KeyDelay: number?
+	KeyDelay: number?,
+	isCustom: boolean?
 }
+
+--==================================================
+-- STATE
+--==================================================
+
+local isPlaying = false
+local stopRequested = false
+local playbackThread: thread? = nil
+local playbackId = 0
+
+local isLoading = false
+local loadGeneration = 0
+
+local songs: {Song} = {}
+local customSongs: {Song} = {}
+local selectedCategory = "All"
 
 --==================================================
 -- GUI
@@ -233,7 +225,7 @@ ScreenGui.DisplayOrder = 100
 ScreenGui.Parent = playerGui
 
 --==================================================
--- Main glass window
+-- MAIN GLASS WINDOW
 --==================================================
 
 local Frame = Instance.new("Frame")
@@ -276,7 +268,7 @@ FrameStroke.Thickness = 1.3
 FrameStroke.Parent = Frame
 
 --==================================================
--- Shadow
+-- SHADOW
 --==================================================
 
 local Shadow = Instance.new("Frame")
@@ -316,7 +308,7 @@ PlayerStroke.Transparency = 0.88
 PlayerStroke.Parent = PlayerBar
 
 --==================================================
--- Piano icon
+-- PIANO ICON
 --==================================================
 
 local PianoIcon = Instance.new("TextLabel")
@@ -337,7 +329,7 @@ PianoIconCorner.CornerRadius = UDim.new(0, 11)
 PianoIconCorner.Parent = PianoIcon
 
 --==================================================
--- Title
+-- TITLE
 --==================================================
 
 local PlayerTitle = Instance.new("TextLabel")
@@ -509,7 +501,169 @@ SongLayout.SortOrder = Enum.SortOrder.LayoutOrder
 SongLayout.Parent = SongPanel
 
 --==================================================
--- Helpers
+-- CUSTOM SONG EDITOR
+--==================================================
+
+local CustomEditor = Instance.new("Frame")
+CustomEditor.Name = "CustomSongEditor"
+CustomEditor.Size = UDim2.fromScale(0.82, 0.78)
+CustomEditor.Position = UDim2.fromScale(0.09, 0.13)
+CustomEditor.BackgroundColor3 = Color3.fromRGB(18, 23, 35)
+CustomEditor.BackgroundTransparency = 0.03
+CustomEditor.BorderSizePixel = 0
+CustomEditor.Visible = false
+CustomEditor.ZIndex = 50
+CustomEditor.Parent = Frame
+
+local CustomEditorCorner = Instance.new("UICorner")
+CustomEditorCorner.CornerRadius = UDim.new(0, 16)
+CustomEditorCorner.Parent = CustomEditor
+
+local CustomEditorStroke = Instance.new("UIStroke")
+CustomEditorStroke.Color = Color3.fromRGB(145, 170, 235)
+CustomEditorStroke.Transparency = 0.65
+CustomEditorStroke.Thickness = 1.2
+CustomEditorStroke.Parent = CustomEditor
+
+local CustomTitle = Instance.new("TextLabel")
+CustomTitle.Size = UDim2.new(1, -60, 0, 30)
+CustomTitle.Position = UDim2.fromOffset(18, 14)
+CustomTitle.BackgroundTransparency = 1
+CustomTitle.Text = "CREATE CUSTOM SONG"
+CustomTitle.TextColor3 = Color3.fromRGB(240, 244, 255)
+CustomTitle.TextSize = 14
+CustomTitle.Font = Enum.Font.GothamBold
+CustomTitle.TextXAlignment = Enum.TextXAlignment.Left
+CustomTitle.ZIndex = 51
+CustomTitle.Parent = CustomEditor
+
+local CustomClose = Instance.new("TextButton")
+CustomClose.Size = UDim2.fromOffset(32, 32)
+CustomClose.Position = UDim2.new(1, -44, 0, 10)
+CustomClose.BackgroundColor3 = Color3.fromRGB(230, 75, 100)
+CustomClose.BorderSizePixel = 0
+CustomClose.Text = "×"
+CustomClose.TextColor3 = Color3.fromRGB(255, 240, 245)
+CustomClose.TextSize = 20
+CustomClose.Font = Enum.Font.GothamBold
+CustomClose.AutoButtonColor = false
+CustomClose.ZIndex = 51
+CustomClose.Parent = CustomEditor
+
+local CustomCloseCorner = Instance.new("UICorner")
+CustomCloseCorner.CornerRadius = UDim.new(0, 9)
+CustomCloseCorner.Parent = CustomClose
+
+local function createEditorBox(
+	name: string,
+	y: number,
+	height: number,
+	placeholder: string
+)
+	local box = Instance.new("TextBox")
+	box.Name = name
+	box.Size = UDim2.new(1, -36, 0, height)
+	box.Position = UDim2.fromOffset(18, y)
+	box.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	box.BackgroundTransparency = 0.92
+	box.BorderSizePixel = 0
+	box.ClearTextOnFocus = false
+	box.MultiLine = height > 40
+	box.PlaceholderText = placeholder
+	box.PlaceholderColor3 = Color3.fromRGB(120, 130, 150)
+	box.TextColor3 = Color3.fromRGB(230, 235, 248)
+	box.TextSize = 12
+	box.Font = Enum.Font.Gotham
+	box.TextXAlignment = Enum.TextXAlignment.Left
+	box.TextYAlignment = Enum.TextYAlignment.Top
+	box.ZIndex = 51
+	box.Parent = CustomEditor
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 9)
+	corner.Parent = box
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingLeft = UDim.new(0, 10)
+	padding.PaddingRight = UDim.new(0, 10)
+	padding.PaddingTop = UDim.new(0, 8)
+	padding.PaddingBottom = UDim.new(0, 8)
+	padding.Parent = box
+
+	return box
+end
+
+local function createEditorLabel(
+	text: string,
+	y: number
+)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -36, 0, 20)
+	label.Position = UDim2.fromOffset(18, y)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = Color3.fromRGB(170, 180, 205)
+	label.TextSize = 11
+	label.Font = Enum.Font.GothamMedium
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 51
+	label.Parent = CustomEditor
+end
+
+createEditorLabel("SONG NAME", 52)
+
+local CustomNameBox = createEditorBox(
+	"SongName",
+	72,
+	38,
+	"My Custom Song"
+)
+
+createEditorLabel("KEYS", 116)
+
+local CustomKeysBox = createEditorBox(
+	"SongKeys",
+	136,
+	90,
+	"abcdefg or a s d f g"
+)
+
+createEditorLabel("KEY DELAY (seconds)", 236)
+
+local CustomDelayBox = createEditorBox(
+	"KeyDelay",
+	256,
+	38,
+	"0.05"
+)
+
+CustomDelayBox.Text =
+	tostring(DEFAULT_KEY_DELAY)
+
+local CustomAddButton = Instance.new("TextButton")
+CustomAddButton.Size =
+	UDim2.new(1, -36, 0, 42)
+CustomAddButton.Position =
+	UDim2.new(0, 18, 1, -58)
+CustomAddButton.BackgroundColor3 =
+	Color3.fromRGB(100, 135, 220)
+CustomAddButton.BackgroundTransparency = 0.08
+CustomAddButton.BorderSizePixel = 0
+CustomAddButton.Text = "ADD SONG"
+CustomAddButton.TextColor3 =
+	Color3.fromRGB(240, 245, 255)
+CustomAddButton.TextSize = 12
+CustomAddButton.Font = Enum.Font.GothamBold
+CustomAddButton.AutoButtonColor = false
+CustomAddButton.ZIndex = 51
+CustomAddButton.Parent = CustomEditor
+
+local CustomAddCorner = Instance.new("UICorner")
+CustomAddCorner.CornerRadius = UDim.new(0, 10)
+CustomAddCorner.Parent = CustomAddButton
+
+--==================================================
+-- HELPERS
 --==================================================
 
 local function setStatus(text: string)
@@ -528,21 +682,19 @@ local function clearContainer(container: Instance)
 	end
 end
 
-local function getFileName(path: string): string
-	local name = path:match("([^\\/]+)$") or path
-	return name:gsub("%.lua$", "")
-end
-
 local function loadSongSource(
 	source: string,
 	displayName: string
 ): (Song?, string?)
 
 	if source == "" then
-		return nil, "Song file is empty: " .. displayName
+		return nil,
+			"Song file is empty: "
+				.. displayName
 	end
 
-	local compiled, compileError = loadstring(source)
+	local compiled, compileError =
+		loadstring(source)
 
 	if not compiled then
 		return nil,
@@ -552,7 +704,8 @@ local function loadSongSource(
 				.. tostring(compileError)
 	end
 
-	local success, result = pcall(compiled)
+	local success, result =
+		pcall(compiled)
 
 	if not success then
 		return nil,
@@ -563,11 +716,103 @@ local function loadSongSource(
 	end
 
 	if type(result) ~= "table" then
-		return nil, "Song must return a table: " .. displayName
+		return nil,
+			"Song must return a table: "
+				.. displayName
 	end
 
 	return result :: Song, nil
 end
+
+--==================================================
+-- CUSTOM SONG EDITOR LOGIC
+--==================================================
+
+local openCustomEditor: () -> ()
+local closeCustomEditor: () -> ()
+local refreshSongDisplay: () -> ()
+local rebuildCategories: () -> ()
+
+openCustomEditor = function()
+	CustomEditor.Visible = true
+	CustomNameBox:CaptureFocus()
+end
+
+closeCustomEditor = function()
+	CustomEditor.Visible = false
+end
+
+CustomClose.Activated:Connect(
+	closeCustomEditor
+)
+
+CustomAddButton.Activated:Connect(
+	function()
+		local name =
+			CustomNameBox.Text
+				:gsub("^%s+", "")
+				:gsub("%s+$", "")
+
+		local keys =
+			CustomKeysBox.Text
+				:gsub("%s+", "")
+
+		local delayText =
+			CustomDelayBox.Text
+				:gsub("^%s+", "")
+				:gsub("%s+$", "")
+
+		local keyDelay =
+			tonumber(delayText)
+				or DEFAULT_KEY_DELAY
+
+		if name == "" then
+			setStatus("Enter a song name")
+			return
+		end
+
+		if keys == "" then
+			setStatus("Enter some keys")
+			return
+		end
+
+		keyDelay = math.clamp(
+			keyDelay,
+			0,
+			2
+		)
+
+		table.insert(
+			customSongs,
+			{
+				Name = name,
+				Category = "My Songs",
+				Keys = keys,
+				KeyDelay = keyDelay,
+				isCustom = true
+			}
+		)
+
+		CustomNameBox.Text = ""
+		CustomKeysBox.Text = ""
+
+		CustomDelayBox.Text =
+			tostring(DEFAULT_KEY_DELAY)
+
+		closeCustomEditor()
+
+		rebuildCategories()
+
+		selectedCategory = "My Songs"
+
+		refreshSongDisplay()
+
+		setStatus(
+			"Custom song added: "
+				.. name
+		)
+	end
+)
 
 --==================================================
 -- STOP SONG
@@ -577,7 +822,8 @@ local function stopSong()
 	playbackId += 1
 	stopRequested = true
 
-	local currentThread = playbackThread
+	local currentThread =
+		playbackThread
 
 	if currentThread then
 		pcall(function()
@@ -595,7 +841,10 @@ end
 -- PLAY SONG
 --==================================================
 
-local function playSong(song: Song, fallbackName: string)
+local function playSong(
+	song: Song,
+	fallbackName: string
+)
 	if not PianoPlayer then
 		setStatus("PianoModule unavailable")
 		return
@@ -606,58 +855,90 @@ local function playSong(song: Song, fallbackName: string)
 		task.wait()
 	end
 
-	local songName = song.Name or fallbackName
+	local songName =
+		song.Name or fallbackName
 
 	playbackId += 1
 
-	local currentPlaybackId = playbackId
+	local currentPlaybackId =
+		playbackId
 
 	isPlaying = true
 	stopRequested = false
 
-	setStatus("Playing: " .. songName)
+	setStatus(
+		"Playing: "
+			.. songName
+	)
 
 	local function playback()
-		local success, errorMessage = pcall(function()
+		local success, errorMessage =
+			pcall(function()
 
-			local playFunction = song.play or song.Play
+				local playFunction =
+					song.play
+					or song.Play
 
-			if type(playFunction) == "function" then
-				playFunction(song, PianoPlayer)
-				return
-			end
+				if type(playFunction) ==
+					"function" then
 
-			if type(song.Keys) == "string" then
-				local keyDelay = song.KeyDelay or DEFAULT_KEY_DELAY
-				local keys = song.Keys:gsub("%s+", "")
+					playFunction(
+						song,
+						PianoPlayer
+					)
 
-				if #keys == 0 then
-					error("Song contains no keys.")
+					return
 				end
 
-				for index = 1, #keys do
-					if stopRequested
-						or currentPlaybackId ~= playbackId then
+				if type(song.Keys) ==
+					"string" then
 
-						return
+					local keyDelay =
+						song.KeyDelay
+						or DEFAULT_KEY_DELAY
+
+					local keys =
+						song.Keys:gsub(
+							"%s+",
+							""
+						)
+
+					if #keys == 0 then
+						error(
+							"Song contains no keys."
+						)
 					end
 
-					PianoPlayer:playKey(
-						keys:sub(index, index),
-						keyDelay
-					)
+					for index = 1, #keys do
+						if stopRequested
+							or currentPlaybackId
+								~= playbackId then
+
+							return
+						end
+
+						PianoPlayer:playKey(
+							keys:sub(
+								index,
+								index
+							),
+							keyDelay
+						)
+					end
+
+					return
 				end
 
-				return
-			end
+				error(
+					"Song has no play()/Play() "
+						.. "function or Keys string: "
+						.. songName
+				)
+			end)
 
-			error(
-				"Song has no play()/Play() function or Keys string: "
-					.. songName
-			)
-		end)
+		if currentPlaybackId
+			~= playbackId then
 
-		if currentPlaybackId ~= playbackId then
 			return
 		end
 
@@ -667,11 +948,22 @@ local function playSong(song: Song, fallbackName: string)
 				errorMessage
 			)
 
-			setStatus("Error: " .. songName)
+			setStatus(
+				"Error: "
+					.. songName
+			)
+
 		elseif stopRequested then
-			setStatus("Stopped: " .. songName)
+			setStatus(
+				"Stopped: "
+					.. songName
+			)
+
 		else
-			setStatus("Finished: " .. songName)
+			setStatus(
+				"Finished: "
+					.. songName
+			)
 		end
 
 		isPlaying = false
@@ -679,21 +971,27 @@ local function playSong(song: Song, fallbackName: string)
 		playbackThread = nil
 	end
 
-	playbackThread = task.spawn(playback)
+	playbackThread =
+		task.spawn(playback)
 end
 
 --==================================================
 -- SONG CATEGORY
 --==================================================
 
-local function getSongCategory(song: Song): string
-	if type(song.Category) == "string"
+local function getSongCategory(
+	song: Song
+): string
+
+	if type(song.Category) ==
+		"string"
 		and song.Category ~= "" then
 
 		return song.Category
 	end
 
-	if type(song.Type) == "string"
+	if type(song.Type) ==
+		"string"
 		and song.Type ~= "" then
 
 		return song.Type
@@ -708,9 +1006,11 @@ end
 
 local function createSongButton(
 	songData: Song,
-	layoutOrder: number
+	layoutOrder: number,
+	isCustomSong: boolean
 )
-	local songButton = Instance.new("TextButton")
+	local songButton =
+		Instance.new("TextButton")
 
 	songButton.Name =
 		songData.Name or "Song"
@@ -719,123 +1019,319 @@ local function createSongButton(
 		UDim2.new(1, 0, 0, 46)
 
 	songButton.BackgroundColor3 =
-		Color3.fromRGB(255, 255, 255)
+		Color3.fromRGB(
+			255,
+			255,
+			255
+		)
 
-	songButton.BackgroundTransparency = 0.91
+	songButton.BackgroundTransparency =
+		0.91
+
 	songButton.BorderSizePixel = 0
 
 	songButton.Text =
 		"  "
-			.. (songData.Name or "Unnamed Song")
+			.. (
+				songData.Name
+				or "Unnamed Song"
+			)
 
 	songButton.TextColor3 =
-		Color3.fromRGB(220, 228, 245)
+		Color3.fromRGB(
+			220,
+			228,
+			245
+		)
 
 	songButton.TextSize = 12
-	songButton.Font = Enum.Font.GothamMedium
+	songButton.Font =
+		Enum.Font.GothamMedium
+
 	songButton.TextXAlignment =
 		Enum.TextXAlignment.Left
 
-	songButton.AutoButtonColor = false
-	songButton.LayoutOrder = layoutOrder
-	songButton.Parent = SongPanel
+	songButton.AutoButtonColor =
+		false
 
-	local songCorner = Instance.new("UICorner")
-	songCorner.CornerRadius = UDim.new(0, 10)
-	songCorner.Parent = songButton
+	songButton.LayoutOrder =
+		layoutOrder
 
-	local songStroke = Instance.new("UIStroke")
+	songButton.Parent =
+		SongPanel
+
+	local songCorner =
+		Instance.new("UICorner")
+
+	songCorner.CornerRadius =
+		UDim.new(0, 10)
+
+	songCorner.Parent =
+		songButton
+
+	local songStroke =
+		Instance.new("UIStroke")
+
 	songStroke.Color =
-		Color3.fromRGB(255, 255, 255)
+		Color3.fromRGB(
+			255,
+			255,
+			255
+		)
 
-	songStroke.Transparency = 0.94
-	songStroke.Parent = songButton
+	songStroke.Transparency =
+		0.94
 
-	songButton.MouseEnter:Connect(function()
-		TweenService:Create(
-			songButton,
-			TweenInfo.new(0.15),
-			{
-				BackgroundTransparency = 0.82
-			}
-		):Play()
+	songStroke.Parent =
+		songButton
 
-		TweenService:Create(
-			songStroke,
-			TweenInfo.new(0.15),
-			{
-				Transparency = 0.75
-			}
-		):Play()
-	end)
+	songButton.MouseEnter:Connect(
+		function()
 
-	songButton.MouseLeave:Connect(function()
-		TweenService:Create(
-			songButton,
-			TweenInfo.new(0.15),
-			{
-				BackgroundTransparency = 0.91
-			}
-		):Play()
+			TweenService:Create(
+				songButton,
+				TweenInfo.new(0.15),
+				{
+					BackgroundTransparency =
+						0.82
+				}
+			):Play()
 
-		TweenService:Create(
-			songStroke,
-			TweenInfo.new(0.15),
-			{
-				Transparency = 0.94
-			}
-		):Play()
-	end)
+			TweenService:Create(
+				songStroke,
+				TweenInfo.new(0.15),
+				{
+					Transparency =
+						0.75
+				}
+			):Play()
+		end
+	)
 
-	songButton.Activated:Connect(function()
-		task.spawn(function()
-			playSong(
-				songData,
-				songData.Name or "Song"
+	songButton.MouseLeave:Connect(
+		function()
+
+			TweenService:Create(
+				songButton,
+				TweenInfo.new(0.15),
+				{
+					BackgroundTransparency =
+						0.91
+				}
+			):Play()
+
+			TweenService:Create(
+				songStroke,
+				TweenInfo.new(0.15),
+				{
+					Transparency =
+						0.94
+				}
+			):Play()
+		end
+	)
+
+	songButton.Activated:Connect(
+		function()
+
+			task.spawn(
+				function()
+
+					playSong(
+						songData,
+						songData.Name
+							or "Song"
+					)
+
+				end
 			)
-		end)
-	end)
+
+		end
+	)
+
+	-- Delete button for player-created songs.
+	if isCustomSong then
+
+		local deleteButton =
+			Instance.new("TextButton")
+
+		deleteButton.Name =
+			"Delete"
+
+		deleteButton.Size =
+			UDim2.fromOffset(
+				30,
+				30
+			)
+
+		deleteButton.Position =
+			UDim2.new(
+				1,
+				-38,
+				0.5,
+				-15
+			)
+
+		deleteButton.BackgroundColor3 =
+			Color3.fromRGB(
+				210,
+				70,
+				95
+			)
+
+		deleteButton.BackgroundTransparency =
+			0.18
+
+		deleteButton.BorderSizePixel =
+			0
+
+		deleteButton.Text =
+			"×"
+
+		deleteButton.TextColor3 =
+			Color3.fromRGB(
+				255,
+				235,
+				240
+			)
+
+		deleteButton.TextSize = 16
+
+		deleteButton.Font =
+			Enum.Font.GothamBold
+
+		deleteButton.AutoButtonColor =
+			false
+
+		deleteButton.ZIndex = 5
+
+		deleteButton.Parent =
+			songButton
+
+		local deleteCorner =
+			Instance.new("UICorner")
+
+		deleteCorner.CornerRadius =
+			UDim.new(0, 8)
+
+		deleteCorner.Parent =
+			deleteButton
+
+		deleteButton.Activated:Connect(
+			function()
+
+				for index, customSong
+					in ipairs(customSongs) do
+
+					if customSong ==
+						songData then
+
+						table.remove(
+							customSongs,
+							index
+						)
+
+						break
+					end
+				end
+
+				refreshSongDisplay()
+
+				setStatus(
+					"Custom song deleted"
+				)
+			end
+		)
+	end
 end
 
 --==================================================
 -- REFRESH SONG DISPLAY
 --==================================================
 
-local function refreshSongDisplay()
-	clearContainer(SongPanel)
+refreshSongDisplay = function()
+
+	clearContainer(
+		SongPanel
+	)
 
 	local visibleCount = 0
 
-	for _, songData in ipairs(songs) do
+	local function addVisibleSong(
+		songData: Song,
+		isCustomSong: boolean
+	)
+
 		local songCategory =
 			getSongCategory(songData)
 
-		if selectedCategory == "All"
-			or songCategory == selectedCategory then
+		if selectedCategory ==
+				"All"
+			or songCategory ==
+				selectedCategory then
 
 			visibleCount += 1
 
 			createSongButton(
 				songData,
-				visibleCount
+				visibleCount,
+				isCustomSong
 			)
 		end
 	end
 
+	for _, songData
+		in ipairs(songs) do
+
+		addVisibleSong(
+			songData,
+			false
+		)
+
+	end
+
+	for _, songData
+		in ipairs(customSongs) do
+
+		addVisibleSong(
+			songData,
+			true
+		)
+
+	end
+
 	if visibleCount == 0 then
-		local empty = Instance.new("TextLabel")
+
+		local empty =
+			Instance.new("TextLabel")
 
 		empty.Size =
-			UDim2.new(1, 0, 0, 50)
+			UDim2.new(
+				1,
+				0,
+				0,
+				50
+			)
 
-		empty.BackgroundTransparency = 1
-		empty.Text = "No songs in this category."
+		empty.BackgroundTransparency =
+			1
+
+		empty.Text =
+			"No songs in this category."
+
 		empty.TextColor3 =
-			Color3.fromRGB(150, 160, 180)
+			Color3.fromRGB(
+				150,
+				160,
+				180
+			)
 
 		empty.TextSize = 12
-		empty.Font = Enum.Font.Gotham
-		empty.Parent = SongPanel
+		empty.Font =
+			Enum.Font.Gotham
+
+		empty.Parent =
+			SongPanel
 	end
 end
 
@@ -847,58 +1343,124 @@ local function createCategoryButton(
 	category: string,
 	layoutOrder: number
 )
-	local button = Instance.new("TextButton")
 
-	button.Name = category
+	local button =
+		Instance.new("TextButton")
+
+	button.Name =
+		category
+
 	button.Size =
-		UDim2.new(1, 0, 0, 40)
+		UDim2.new(
+			1,
+			0,
+			0,
+			40
+		)
 
 	button.BackgroundColor3 =
-		Color3.fromRGB(255, 255, 255)
+		Color3.fromRGB(
+			255,
+			255,
+			255
+		)
 
-	button.BackgroundTransparency = 0.93
+	button.BackgroundTransparency =
+		0.93
+
 	button.BorderSizePixel = 0
-	button.Text = category
+
+	button.Text =
+		category
 
 	button.TextColor3 =
-		Color3.fromRGB(195, 205, 225)
+		Color3.fromRGB(
+			195,
+			205,
+			225
+		)
 
 	button.TextSize = 12
-	button.Font = Enum.Font.GothamMedium
+
+	button.Font =
+		Enum.Font.GothamMedium
+
 	button.TextXAlignment =
 		Enum.TextXAlignment.Left
 
-	button.AutoButtonColor = false
-	button.LayoutOrder = layoutOrder
-	button.Parent = CategoryPanel
+	button.AutoButtonColor =
+		false
 
-	local padding = Instance.new("UIPadding")
-	padding.PaddingLeft = UDim.new(0, 12)
-	padding.Parent = button
+	button.LayoutOrder =
+		layoutOrder
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 9)
-	corner.Parent = button
+	button.Parent =
+		CategoryPanel
 
-	button.Activated:Connect(function()
-		selectedCategory = category
+	local padding =
+		Instance.new("UIPadding")
 
-		for _, child in ipairs(CategoryPanel:GetChildren()) do
-			if child:IsA("TextButton") then
-				child.BackgroundTransparency = 0.93
+	padding.PaddingLeft =
+		UDim.new(
+			0,
+			12
+		)
 
-				child.TextColor3 =
-					Color3.fromRGB(195, 205, 225)
+	padding.Parent =
+		button
+
+	local corner =
+		Instance.new("UICorner")
+
+	corner.CornerRadius =
+		UDim.new(
+			0,
+			9
+		)
+
+	corner.Parent =
+		button
+
+	button.Activated:Connect(
+		function()
+
+			selectedCategory =
+				category
+
+			for _, child
+				in ipairs(
+					CategoryPanel:GetChildren()
+				) do
+
+				if child:IsA(
+					"TextButton"
+				) then
+
+					child.BackgroundTransparency =
+						0.93
+
+					child.TextColor3 =
+						Color3.fromRGB(
+							195,
+							205,
+							225
+						)
+				end
 			end
+
+			button.BackgroundTransparency =
+				0.78
+
+			button.TextColor3 =
+				Color3.fromRGB(
+					235,
+					242,
+					255
+				)
+
+			refreshSongDisplay()
 		end
-
-		button.BackgroundTransparency = 0.78
-
-		button.TextColor3 =
-			Color3.fromRGB(235, 242, 255)
-
-		refreshSongDisplay()
-	end)
+	)
 
 	return button
 end
@@ -907,71 +1469,205 @@ end
 -- LOAD CATEGORIES
 --==================================================
 
-local function rebuildCategories()
-	clearContainer(CategoryPanel)
+rebuildCategories = function()
 
-	local categorySet: {[string]: boolean} = {
-		All = true
-	}
+	clearContainer(
+		CategoryPanel
+	)
 
-	for _, song in ipairs(songs) do
+	local categorySet:
+		{[string]: boolean} = {
+			All = true,
+			["My Songs"] = true
+		}
+
+	for _, song
+		in ipairs(songs) do
+
 		categorySet[
 			getSongCategory(song)
 		] = true
+
+	end
+
+	for _, song
+		in ipairs(customSongs) do
+
+		categorySet[
+			getSongCategory(song)
+		] = true
+
 	end
 
 	local categories = {}
 
-	for category in pairs(categorySet) do
-		table.insert(categories, category)
+	for category in pairs(
+		categorySet
+	) do
+
+		table.insert(
+			categories,
+			category
+		)
+
 	end
 
-	table.sort(categories, function(a, b)
-		if a == "All" then
-			return true
+	table.sort(
+		categories,
+		function(a, b)
+
+			if a == "All" then
+				return true
+			end
+
+			if b == "All" then
+				return false
+			end
+
+			if a == "My Songs" then
+				return true
+			end
+
+			if b == "My Songs" then
+				return false
+			end
+
+			return a < b
 		end
+	)
 
-		if b == "All" then
-			return false
-		end
+	for index, category
+		in ipairs(categories) do
 
-		return a < b
-	end)
-
-	for index, category in ipairs(categories) do
 		createCategoryButton(
 			category,
 			index
 		)
+
 	end
 
-	selectedCategory = "All"
+	-- Add-song button.
+	local addSongButton =
+		Instance.new("TextButton")
+
+	addSongButton.Name =
+		"AddCustomSong"
+
+	addSongButton.Size =
+		UDim2.new(
+			1,
+			0,
+			0,
+			40
+		)
+
+	addSongButton.BackgroundColor3 =
+		Color3.fromRGB(
+			100,
+			135,
+			220
+		)
+
+	addSongButton.BackgroundTransparency =
+		0.82
+
+	addSongButton.BorderSizePixel =
+		0
+
+	addSongButton.Text =
+		"+  ADD MY SONG"
+
+	addSongButton.TextColor3 =
+		Color3.fromRGB(
+			220,
+			230,
+			250
+		)
+
+	addSongButton.TextSize = 11
+
+	addSongButton.Font =
+		Enum.Font.GothamBold
+
+	addSongButton.TextXAlignment =
+		Enum.TextXAlignment.Left
+
+	addSongButton.AutoButtonColor =
+		false
+
+	addSongButton.LayoutOrder =
+		#categories + 1
+
+	addSongButton.Parent =
+		CategoryPanel
+
+	local addPadding =
+		Instance.new("UIPadding")
+
+	addPadding.PaddingLeft =
+		UDim.new(
+			0,
+			12
+		)
+
+	addPadding.Parent =
+		addSongButton
+
+	local addCorner =
+		Instance.new("UICorner")
+
+	addCorner.CornerRadius =
+		UDim.new(
+			0,
+			9
+		)
+
+	addCorner.Parent =
+		addSongButton
+
+	addSongButton.Activated:Connect(
+		openCustomEditor
+	)
+
+	selectedCategory =
+		"All"
 
 	local allButton =
-		CategoryPanel:FindFirstChild("All")
+		CategoryPanel:FindFirstChild(
+			"All"
+		)
 
 	if allButton
-		and allButton:IsA("TextButton") then
+		and allButton:IsA(
+			"TextButton"
+		) then
 
-		allButton.BackgroundTransparency = 0.78
+		allButton.BackgroundTransparency =
+			0.78
 
 		allButton.TextColor3 =
-			Color3.fromRGB(235, 242, 255)
+			Color3.fromRGB(
+				235,
+				242,
+				255
+			)
 	end
 
 	refreshSongDisplay()
 end
 
 --==================================================
--- LOAD SONGS
+-- LOAD SONGS FROM GITHUB
 --==================================================
 
 local function loadSongs()
+
 	if isLoading then
 		return
 	end
 
 	isLoading = true
+
 	loadGeneration += 1
 
 	local currentGeneration =
@@ -979,10 +1675,17 @@ local function loadSongs()
 
 	stopSong()
 
+	-- Only replace official songs.
+	-- Player-created songs stay intact.
 	songs = {}
 
-	clearContainer(CategoryPanel)
-	clearContainer(SongPanel)
+	clearContainer(
+		CategoryPanel
+	)
+
+	clearContainer(
+		SongPanel
+	)
 
 	setStatus(
 		"Loading v"
@@ -991,31 +1694,48 @@ local function loadSongs()
 	)
 
 	local success, body =
-		pcall(httpGet, GITHUB_SONGS_URL)
+		pcall(
+			httpGet,
+			GITHUB_SONGS_URL
+		)
 
-	if currentGeneration ~= loadGeneration then
+	if currentGeneration
+		~= loadGeneration then
+
 		isLoading = false
 		return
 	end
 
 	if not success then
-		setStatus("GitHub loading failed")
+
+		setStatus(
+			"GitHub loading failed - "
+				.. "My Songs still available"
+		)
 
 		warn(
 			"PianoPlayer:",
 			body
 		)
 
+		rebuildCategories()
+
 		isLoading = false
 		return
 	end
 
 	local decodeSuccess, entries =
-		pcall(function()
-			return HttpService:JSONDecode(body)
-		end)
+		pcall(
+			function()
+				return HttpService:JSONDecode(
+					body
+				)
+			end
+		)
 
-	if currentGeneration ~= loadGeneration then
+	if currentGeneration
+		~= loadGeneration then
+
 		isLoading = false
 		return
 	end
@@ -1023,7 +1743,13 @@ local function loadSongs()
 	if not decodeSuccess
 		or type(entries) ~= "table" then
 
-		setStatus("Invalid GitHub response")
+		setStatus(
+			"Invalid GitHub response - "
+				.. "My Songs still available"
+		)
+
+		rebuildCategories()
+
 		isLoading = false
 		return
 	end
@@ -1031,41 +1757,57 @@ local function loadSongs()
 	local loadedCount = 0
 	local failedCount = 0
 
-	for _, entry in ipairs(entries) do
-		if currentGeneration ~= loadGeneration then
+	for _, entry
+		in ipairs(entries) do
+
+		if currentGeneration
+			~= loadGeneration then
+
 			isLoading = false
 			return
 		end
 
 		if type(entry) == "table"
 			and entry.type == "file"
-			and type(entry.name) == "string"
-			and entry.name:lower():sub(-4) == ".lua" then
+			and type(entry.name) ==
+				"string"
+			and entry.name:lower():sub(
+				-4
+			) == ".lua" then
 
 			local downloadUrl =
 				entry.download_url
 
-			if type(downloadUrl) == "string"
+			if type(downloadUrl) ==
+				"string"
 				and downloadUrl ~= "" then
 
 				local fileSuccess, source =
-					pcall(httpGet, downloadUrl)
+					pcall(
+						httpGet,
+						downloadUrl
+					)
 
 				if fileSuccess then
-					local song, errorMessage =
+
+					local song,
+						errorMessage =
 						loadSongSource(
 							source,
 							entry.name
 						)
 
 					if song then
+
 						table.insert(
 							songs,
 							song
 						)
 
 						loadedCount += 1
+
 					else
+
 						failedCount += 1
 
 						warn(
@@ -1073,28 +1815,42 @@ local function loadSongs()
 							errorMessage
 						)
 					end
+
 				else
+
 					failedCount += 1
 
 					warn(
-						"PianoPlayer failed to download "
-							.. tostring(entry.name)
+						"PianoPlayer failed "
+							.. "to download "
+							.. tostring(
+								entry.name
+							)
 							.. ": "
-							.. tostring(source)
+							.. tostring(
+								source
+							)
 					)
 				end
+
 			else
+
 				failedCount += 1
 
 				warn(
-					"PianoPlayer: No download URL for "
-						.. tostring(entry.name)
+					"PianoPlayer: "
+						.. "No download URL for "
+						.. tostring(
+							entry.name
+						)
 				)
 			end
 		end
 	end
 
-	if currentGeneration ~= loadGeneration then
+	if currentGeneration
+		~= loadGeneration then
+
 		isLoading = false
 		return
 	end
@@ -1102,6 +1858,7 @@ local function loadSongs()
 	rebuildCategories()
 
 	if failedCount > 0 then
+
 		setStatus(
 			string.format(
 				"%d songs loaded • %d failed",
@@ -1109,7 +1866,9 @@ local function loadSongs()
 				failedCount
 			)
 		)
+
 	else
+
 		setStatus(
 			string.format(
 				"%d songs loaded",
@@ -1125,25 +1884,39 @@ end
 -- BUTTONS
 --==================================================
 
-StopButton.Activated:Connect(function()
-	stopSong()
-end)
-
-RefreshButton.Activated:Connect(function()
-	if isLoading then
-		return
+StopButton.Activated:Connect(
+	function()
+		stopSong()
 	end
+)
 
-	task.spawn(loadSongs)
-end)
+RefreshButton.Activated:Connect(
+	function()
 
-CloseButton.Activated:Connect(function()
-	stopSong()
-	ScreenGui.Enabled = false
-end)
+		if isLoading then
+			return
+		end
+
+		task.spawn(
+			loadSongs
+		)
+	end
+)
+
+CloseButton.Activated:Connect(
+	function()
+
+		stopSong()
+
+		ScreenGui.Enabled =
+			false
+	end
+)
 
 --==================================================
 -- INITIAL LOAD
 --==================================================
 
-task.spawn(loadSongs)
+task.spawn(
+	loadSongs
+)
