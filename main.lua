@@ -128,6 +128,63 @@ local GITHUB_SONGS_URL =
 	GITHUB_API_BASE
 		.. "/contents/songs?ref=main"
 
+-- Seasonal folders are loaded alongside the regular songs only while active.
+-- Folder names in GitHub must match these names exactly.
+local SEASONAL_FOLDERS = {
+	{
+		Folder = "NewYearSongs",
+		Category = "New Year",
+		IsActive = function(date)
+			return date.month == 1 and date.day == 1
+		end,
+	},
+	{
+		Folder = "ValentinesSongs",
+		Category = "Valentine's Day",
+		IsActive = function(date)
+			return date.month == 2 and date.day == 14
+		end,
+	},
+	{
+		Folder = "HalloweenSongs",
+		Category = "Halloween",
+		IsActive = function(date)
+			return date.month == 10 and date.day == 31
+		end,
+	},
+	{
+		Folder = "ChristmasSongs",
+		Category = "Christmas",
+		IsActive = function(date)
+			return date.month == 12 and date.day >= 1 and date.day <= 25
+		end,
+	},
+}
+
+local function getPlayerDate(): (string, any)
+	local date = os.date("*t")
+
+	return string.format(
+		"%02d/%02d/%04d",
+		date.day,
+		date.month,
+		date.year
+	), date
+end
+
+local function getActiveSeasonalFolders(): {any}
+	local _, date = getPlayerDate()
+	local activeFolders = {}
+
+	for _, season in ipairs(SEASONAL_FOLDERS) do
+		if season.IsActive(date) then
+			table.insert(activeFolders, season)
+		end
+	end
+
+	return activeFolders
+end
+
 local PIANO_MODULE_URL =
 	"https://raw.githubusercontent.com/ShadowDev1231/PianoPlayer/main/PianoModule.lua"
 
@@ -356,6 +413,21 @@ StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 StatusLabel.Parent = PlayerBar
+
+-- Current player-runtime date, displayed as DD/MM/YYYY.
+local DateLabel = Instance.new("TextLabel")
+DateLabel.Name = "DateLabel"
+DateLabel.Size = UDim2.fromOffset(150, 14)
+DateLabel.Position = UDim2.new(1, -162, 0, 3)
+DateLabel.BackgroundTransparency = 1
+DateLabel.Text = getPlayerDate()
+DateLabel.TextColor3 = Color3.fromRGB(160, 190, 235)
+DateLabel.TextSize = 9
+DateLabel.Font = Enum.Font.GothamMedium
+DateLabel.TextXAlignment = Enum.TextXAlignment.Right
+DateLabel.TextTruncate = Enum.TextTruncate.AtEnd
+DateLabel.Parent = PlayerBar
+
 
 --==================================================
 -- STOP
@@ -1670,215 +1742,194 @@ local function loadSongs()
 
 	loadGeneration += 1
 
-	local currentGeneration =
-		loadGeneration
+	local currentGeneration = loadGeneration
 
 	stopSong()
 
-	-- Only replace official songs.
-	-- Player-created songs stay intact.
+	-- Replace official songs while keeping player-created songs.
 	songs = {}
 
-	clearContainer(
-		CategoryPanel
-	)
+	clearContainer(CategoryPanel)
+	clearContainer(SongPanel)
 
-	clearContainer(
-		SongPanel
-	)
-
-	setStatus(
-		"Loading v"
-			.. VERSION
-			.. " songs..."
-	)
-
-	local success, body =
-		pcall(
-			httpGet,
-			GITHUB_SONGS_URL
-		)
-
-	if currentGeneration
-		~= loadGeneration then
-
-		isLoading = false
-		return
-	end
-
-	if not success then
-
-		setStatus(
-			"GitHub loading failed - "
-				.. "My Songs still available"
-		)
-
-		warn(
-			"PianoPlayer:",
-			body
-		)
-
-		rebuildCategories()
-
-		isLoading = false
-		return
-	end
-
-	local decodeSuccess, entries =
-		pcall(
-			function()
-				return HttpService:JSONDecode(
-					body
-				)
-			end
-		)
-
-	if currentGeneration
-		~= loadGeneration then
-
-		isLoading = false
-		return
-	end
-
-	if not decodeSuccess
-		or type(entries) ~= "table" then
-
-		setStatus(
-			"Invalid GitHub response - "
-				.. "My Songs still available"
-		)
-
-		rebuildCategories()
-
-		isLoading = false
-		return
-	end
+	local dateText = getPlayerDate()
+	setStatus("Loading v" .. VERSION .. " songs • " .. dateText)
 
 	local loadedCount = 0
 	local failedCount = 0
 
-	for _, entry
-		in ipairs(entries) do
-
-		if currentGeneration
-			~= loadGeneration then
-
-			isLoading = false
+	-- Load one folder and assign a category override for seasonal songs.
+	local function loadFolder(folderName: string, categoryOverride: string?)
+		if currentGeneration ~= loadGeneration then
 			return
 		end
 
-		if type(entry) == "table"
-			and entry.type == "file"
-			and type(entry.name) ==
-				"string"
-			and entry.name:lower():sub(
-				-4
-			) == ".lua" then
+		local folderUrl = GITHUB_API_BASE
+			.. "/contents/"
+			.. folderName
+			.. "?ref=main"
 
-			local downloadUrl =
-				entry.download_url
+		local success, body = pcall(httpGet, folderUrl)
 
-			if type(downloadUrl) ==
-				"string"
-				and downloadUrl ~= "" then
+		if currentGeneration ~= loadGeneration then
+			return
+		end
 
-				local fileSuccess, source =
-					pcall(
-						httpGet,
-						downloadUrl
-					)
+		if not success then
+			warn(
+				"PianoPlayer: Could not load folder "
+					.. folderName
+					.. ": "
+					.. tostring(body)
+			)
+			-- A missing seasonal folder should not stop regular songs.
+			if folderName == "songs" then
+				setStatus("Could not load regular songs")
+			end
+			return
+		end
 
-				if fileSuccess then
+		local decodeSuccess, entries = pcall(function()
+			return HttpService:JSONDecode(body)
+		end)
 
-					local song,
-						errorMessage =
-						loadSongSource(
-							source,
-							entry.name
-						)
+		if not decodeSuccess or type(entries) ~= "table" then
+			failedCount += 1
+			warn("PianoPlayer: Invalid GitHub folder response for " .. folderName)
+			return
+		end
 
-					if song then
+		for _, entry in ipairs(entries) do
+			if currentGeneration ~= loadGeneration then
+				return
+			end
 
-						table.insert(
-							songs,
-							song
-						)
+			if type(entry) == "table"
+				and entry.type == "file"
+				and type(entry.name) == "string"
+				and entry.name:lower():sub(-4) == ".lua" then
 
-						loadedCount += 1
+				local downloadUrl = entry.download_url
 
-					else
+				if type(downloadUrl) == "string" and downloadUrl ~= "" then
+					local fileSuccess, source = pcall(httpGet, downloadUrl)
 
-						failedCount += 1
-
-						warn(
-							"PianoPlayer:",
-							errorMessage
-						)
+					if currentGeneration ~= loadGeneration then
+						return
 					end
 
-				else
+					if fileSuccess then
+						local song, errorMessage = loadSongSource(source, entry.name)
 
-					failedCount += 1
+						if song then
+							-- Seasonal folder names become visible UI categories.
+							if categoryOverride then
+								song.Category = categoryOverride
+							elseif type(song.Category) ~= "string"
+								or song.Category == "" then
+								if type(song.Type) ~= "string" or song.Type == "" then
+									song.Category = "Normal"
+								end
+							end
 
-					warn(
-						"PianoPlayer failed "
-							.. "to download "
-							.. tostring(
-								entry.name
-							)
-							.. ": "
-							.. tostring(
-								source
-							)
-					)
-				end
-
-			else
-
-				failedCount += 1
-
-				warn(
-					"PianoPlayer: "
-						.. "No download URL for "
-						.. tostring(
-							entry.name
+							table.insert(songs, song)
+							loadedCount += 1
+						else
+							failedCount += 1
+							warn("PianoPlayer:", errorMessage)
+						end
+					else
+						failedCount += 1
+						warn(
+							"PianoPlayer failed to download "
+								.. tostring(entry.name)
+								.. ": "
+								.. tostring(source)
 						)
-				)
+					end
+				else
+					failedCount += 1
+					warn("PianoPlayer: No download URL for " .. tostring(entry.name))
+				end
 			end
 		end
 	end
 
-	if currentGeneration
-		~= loadGeneration then
+	-- Always load the normal library first.
+	loadFolder("songs", nil)
 
+	if currentGeneration ~= loadGeneration then
+		isLoading = false
+		return
+	end
+
+	-- Load only the seasonal folder(s) active on the player's current date.
+	local activeSeasons = getActiveSeasonalFolders()
+
+	for _, season in ipairs(activeSeasons) do
+		if currentGeneration ~= loadGeneration then
+			isLoading = false
+			return
+		end
+
+		loadFolder(season.Folder, season.Category)
+	end
+
+	if currentGeneration ~= loadGeneration then
 		isLoading = false
 		return
 	end
 
 	rebuildCategories()
 
+	local seasonNames = {}
+	for _, season in ipairs(activeSeasons) do
+		table.insert(seasonNames, season.Category)
+	end
+
+	local seasonSuffix = ""
+	if #seasonNames > 0 then
+		seasonSuffix = " • Seasonal: " .. table.concat(seasonNames, ", ")
+	end
+
 	if failedCount > 0 then
-
-		setStatus(
-			string.format(
-				"%d songs loaded • %d failed",
-				loadedCount,
-				failedCount
-			)
-		)
-
+		setStatus(string.format(
+			"%d songs loaded • %d failed%s",
+			loadedCount,
+			failedCount,
+			seasonSuffix
+		))
 	else
-
-		setStatus(
-			string.format(
-				"%d songs loaded",
-				loadedCount
-			)
-		)
+		setStatus(string.format(
+			"%d songs loaded%s",
+			loadedCount,
+			seasonSuffix
+		))
 	end
 
 	isLoading = false
 end
+
+-- Update the date continuously. If the date changes while the UI is open,
+-- reload the library so the correct seasonal folder becomes active.
+task.spawn(function()
+	local previousDate = getPlayerDate()
+
+	while ScreenGui.Parent do
+		task.wait(60)
+
+		local currentDate = getPlayerDate()
+		DateLabel.Text = currentDate
+
+		if currentDate ~= previousDate then
+			previousDate = currentDate
+
+			if not isLoading then
+				task.spawn(loadSongs)
+			end
+		end
+	end
+end)
 
 --==================================================
 -- BUTTONS
