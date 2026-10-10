@@ -132,13 +132,6 @@ local GITHUB_SONGS_URL =
 -- Folder names in GitHub must match these names exactly.
 local SEASONAL_FOLDERS = {
 	{
-		Folder = "NewYearSongs",
-		Category = "New Year",
-		IsActive = function(date)
-			return date.month == 1 and date.day == 1
-		end,
-	},
-	{
 		Folder = "ValentinesSongs",
 		Category = "Valentine's Day",
 		IsActive = function(date)
